@@ -8,6 +8,7 @@
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-1e40af)
 ![Status: spec, no code yet](https://img.shields.io/badge/status-spec%2C%20no%20code%20yet-4a4946)
+![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-4a4946)
 
 <img src="assets/mock-main-window.png" alt="LTE Stick View main window mockup: route switch, four status lines, Open stick page and Quit" width="720">
 
@@ -16,7 +17,7 @@
 The Huawei stick that gives the Orange Pi Zero its mobile connection has its own web page at `192.168.8.1`, and only the box can reach it. From the Mac that takes an `ssh -D` tunnel in one terminal and a specially started browser in another, with the right host name for wherever we are. This app does the same thing from `/Applications`: it picks the route, holds the tunnel, proves the stick answers, and opens the page in the viewer you choose.
 
 > [!NOTE]
-> The mockup above is the agreed design, not a screenshot. The app is being built step by step; where it stands is in [LOG.md](LOG.md).
+> The mockup above is the agreed design, not a screenshot. The app is being built step by step; where it stands is in the [roadmap](#roadmap) below, and [SPEC.md](SPEC.md) is kept up to date as it is built.
 
 ---
 
@@ -29,6 +30,7 @@ The Huawei stick that gives the Orange Pi Zero its mobile connection has its own
   - [Repository layout](#repository-layout)
   - [Roadmap](#roadmap)
   - [Related](#related)
+  - [License](#license)
 
 ---
 
@@ -46,7 +48,7 @@ The Huawei stick that gives the Orange Pi Zero its mobile connection has its own
 ## Where to start
 
 - **To understand the design**: [SPEC.md](SPEC.md), with the chain diagram, every ssh flag explained, and the status words.
-- **To resume work**: [LOG.md](LOG.md), the *Pick up here* section first, then [CONTEXT.md](CONTEXT.md) for the facts.
+- **To see where it stands**: the [roadmap](#roadmap) below, and the note box at the top of [SPEC.md](SPEC.md).
 - **To change a mockup**: [assets/README.md](assets/README.md).
 - **For the manual commands this app replaces**: the server repo's [runbook 05, Read the stick](https://github.com/dattasaurabh82/orangepizero-solar-server/blob/main/runbooks/05-network-setup.md#read-the-stick).
 
@@ -58,8 +60,7 @@ The Huawei stick that gives the Orange Pi Zero its mobile connection has its own
 lte-usb-modem-remote-stick-view/
 ├── README.md        this page
 ├── SPEC.md          the design: tunnel, sign-in, routes, viewers, status lines
-├── CONTEXT.md       facts about the box, the stick and the Mac, decisions, terms
-├── LOG.md           step by step record and the resume point
+├── LICENSE          GNU LGPL 2.1
 ├── .gitignore
 └── assets/          mockups (HTML sources and rendered PNGs), index in its README
 ```
@@ -81,3 +82,9 @@ lte-usb-modem-remote-stick-view/
 ## Related
 
 - [orangepizero-solar-server](https://github.com/dattasaurabh82/orangepizero-solar-server): the box this app reaches, and the stick's setup in [runbook 05](https://github.com/dattasaurabh82/orangepizero-solar-server/blob/main/runbooks/05-network-setup.md#read-the-stick).
+
+---
+
+## License
+
+LTE Stick View is released under the GNU Lesser General Public License, version 2.1. The full text is in [LICENSE](LICENSE).

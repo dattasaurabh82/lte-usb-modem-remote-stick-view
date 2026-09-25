@@ -3,11 +3,11 @@
 > [!NOTE]
 > **Status**: spec written and mockups rendered, no app code yet
 >
-> **Verified**: `2026-09-25`, the Mac facts in [CONTEXT.md](CONTEXT.md) checked on the machine; the manual SOCKS route this app wraps was checked on `2026-09-23` in the server repo
+> **Verified**: `2026-09-25`, the Mac it is built for (see [Build and install](#build-and-install)), the stick's name and its route on the box; the manual SOCKS route this app wraps was checked on `2026-09-23` in the server repo
 >
 > **Open**: whether Arc honours `--proxy-server` and `--user-data-dir`; the Firefox launch is written from documentation and not yet run
 >
-> **Next**: step 2, the tunnel core (see [LOG.md](LOG.md))
+> **Next**: step 2, the tunnel core (see the [roadmap](README.md#roadmap))
 
 ---
 
@@ -122,7 +122,7 @@ The tunnel counts as ready only when the whole chain has answered, not when ssh 
 
 1. The app polls `127.0.0.1:1080` every 200 ms until it accepts a connection, for at most 10 seconds.
 2. It then fetches `api/device/information` from the stick through the proxy, with a 5 second timeout. That endpoint answers without a session (checked `2026-09-23`).
-3. From the answer it takes the model name for the **lte stick** line.
+3. From the answer it takes the model name for the **lte stick** line. The name is whatever the stick reports: ours answers `E3372-325`, not the E3372h-320 it was sold as (read from the box on `2026-09-25`).
 
 While connected, the stick check repeats every 30 seconds. It costs no SIM data: the stick answers over USB and nothing leaves through the mobile network.
 
@@ -185,7 +185,7 @@ The main window has four lines, each with its own dot. Green means working, yell
 
 - **Targets**: name, `user@host`, sign-in mode (tailnet, key or password), in the order Auto tries them. Defaults: *Home LAN*, `root@orangepizero.lan`, key; *Tailscale*, `root@orangepizero`, tailnet.
 - **Password**: stored in the Keychain only, per target, used only by targets in password mode.
-- **Stick address**: default `http://192.168.8.1/`. **Detect from box** runs `ip -4 route show default dev lte0` on the box, through the target in use, as one short extra ssh command, and takes the gateway after `via`, so the address comes from the box instead of from memory.
+- **Stick address**: default `http://192.168.8.1/`. **Detect from box** runs `ip -4 route show default dev lte0` on the box, through the target in use, as one short extra ssh command, and takes the gateway after `via`, so the address comes from the box instead of from memory. On our box the answer is `default via 192.168.8.1 proto dhcp metric 300` (checked `2026-09-25`).
 - **SOCKS port**: default `1080`. When saved, the app checks the port is free and suggests the next free one if not.
 - **Browsers found on this Mac**: read-only, what was found and how each will be started.
 
@@ -206,6 +206,9 @@ The port is fixed rather than picked at random on each connect, so a browser sta
 ## Build and install
 
 A native SwiftUI app with no third-party dependencies, built as a Swift package, with macOS 14 as the minimum because of the WebKit proxy API. A script builds the release binary, assembles `LTE Stick View.app` with its `Info.plist` and icon, signs it ad hoc for this Mac, and copies it into `/Applications`. The app costs nothing when it is not running; when it runs, it is one idle ssh process and a small window.
+
+> [!IMPORTANT]
+> The Mac it is built and tested on, as read off the machine on `2026-09-25`: macOS 27.0 on Apple silicon, Xcode with Swift 6.4, `OpenSSH_10.3p1` at `/usr/bin/ssh`, Tailscale 1.102.4 (the standalone app, CLI launcher at `/usr/local/bin/tailscale`). Apps registered for `http`: Google Chrome, Safari, Firefox, Arc, MKPlayer and iTerm.
 
 ---
 
