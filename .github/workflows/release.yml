@@ -52,9 +52,9 @@ jobs:
 
           1. Download \`LTE-Stick-View-$VERSION.dmg\`, open it, and drag **LTE Stick View** onto **Applications**.
           2. The app is signed ad hoc, not notarized by Apple, so macOS blocks it on first launch. Allow it once, in one of three ways:
-             - with [Sentinel](https://github.com/alienator88/Sentinel/releases): drop the app on *Allow unsigned app to launch*;
-             - in Terminal: \`xattr -dr com.apple.quarantine "/Applications/LTE Stick View.app"\`;
-             - or open it once, then **System Settings**, **Privacy & Security**, **Open Anyway**.
+            - with [Sentinel](https://github.com/alienator88/Sentinel/releases): drop the app on *Allow unsigned app to launch*;
+            - in Terminal: \`xattr -dr com.apple.quarantine "/Applications/LTE Stick View.app"\`;
+            - or open it once, then **System Settings**, **Privacy & Security**, **Open Anyway**.
           3. Check the download, if you like: \`shasum -a 256 -c LTE-Stick-View-$VERSION.dmg.sha256\` in the folder with both files.
 
           Leave Gatekeeper itself switched on; only this app needs the exception.
