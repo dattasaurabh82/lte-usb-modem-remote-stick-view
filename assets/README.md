@@ -8,7 +8,8 @@ The mockups of the app, each as an HTML source and the PNG rendered from it, and
 - `mock-main-window.html`, `mock-main-window.png`: the main window, connected over the tailnet.
 - `mock-browser-chooser.html`, `mock-browser-chooser.png`: the chooser that opens from **Open stick page…**.
 - `mock-settings.html`, `mock-settings.png`: the settings window.
-- `app-main-window.png`: a screenshot of the real app, connected over the tailnet.
+- `app-main-window.png`: a screenshot of the installed app, connected over the tailnet; also the README's hero image.
+- `app-settings.png`: the Settings window of the installed app, taken with `--show-settings`.
 - `app-tailscale-missing.png`: a screenshot of the real app started with `--simulate tailscale-missing`.
 - `app-viewer.png`: the built-in viewer with the stick's page, taken with `--open-viewer` and scaled to 1600 pixels wide.
 - `app-viewer-waiting.png`: the viewer waiting for the tunnel, taken with `--simulate tailscale-missing --open-viewer`, same scale.

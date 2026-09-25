@@ -7,10 +7,10 @@
 ![Platform: macOS 14 and later](https://img.shields.io/badge/platform-macOS%2014%2B-1e40af)
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-1e40af)
-![Status: step 6 of 7, settings and passwords](https://img.shields.io/badge/status-step%206%20of%207%2C%20settings%20and%20passwords-4a4946)
+![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-4a4946)
 ![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-4a4946)
 
-<img src="assets/mock-main-window.png" alt="LTE Stick View main window mockup: route switch, five status lines, Open stick page and Quit" width="720">
+<img src="assets/app-main-window.png" alt="LTE Stick View connected over Tailscale: route switch, five green status lines, Open stick page, the log" width="640">
 
 </div>
 
@@ -21,7 +21,7 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
 <br>
 
 > [!NOTE]
-> The mockup above is the agreed design, not a screenshot. The app is being built step by step; where it stands is in the [roadmap](#roadmap) below, and [SPEC.md](SPEC.md) is kept up to date as it is built.
+> All seven build steps are done, and the app runs from `/Applications`. A few things can only be checked at home or by hand; they are listed under [Still to check](#still-to-check).
 
 ---
 
@@ -33,9 +33,12 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
   - [Why this exists](#why-this-exists)
     - [The chore, in our case](#the-chore-in-our-case)
     - [What the app does instead](#what-the-app-does-instead)
+  - [Install](#install)
+  - [Use](#use)
   - [Where to start](#where-to-start)
   - [Repository layout](#repository-layout)
   - [Roadmap](#roadmap)
+    - [Still to check](#still-to-check)
   - [Related](#related)
   - [License](#license)
 
@@ -129,11 +132,55 @@ For another board or modem, change the targets and the modem's address in Settin
 
 ---
 
+## Install
+
+It builds on the Mac that will run it, from source; there is no download.
+
+**What it needs**: macOS 14 or later, and Xcode or the Xcode command line tools with Swift 6. The Tailscale app is optional, needed only to reach the board away from its home network.
+
+```bash
+git clone git@github.com:dattasaurabh82/lte-usb-modem-remote-stick-view.git
+cd lte-usb-modem-remote-stick-view
+scripts/build-app.sh
+```
+
+The script builds a release binary, puts it into `LTE Stick View.app` with its icon, signs it for this Mac, and copies it into `/Applications`. The end of its output:
+
+```text
+== sign (ad hoc, for this Mac only)
+build/LTE Stick View.app: replacing existing signature
+signature ok
+installed: /Applications/LTE Stick View.app
+```
+
+> [!TIP]
+> `scripts/build-app.sh --no-install` builds into `build/` only. To update, quit the app and run the script again; it refuses to replace a copy that is running.
+
+> [!IMPORTANT]
+> The signature is ad hoc, made on this Mac for this Mac. The app is not notarized and is not meant to be copied to other Macs; build it on each one.
+
+---
+
+## Use
+
+1. Open **LTE Stick View** from `/Applications`. It connects at once, over the home network if the board answers there, over Tailscale otherwise.
+2. Wait for the five lines to turn green. If one turns red, its words say why, and the **tailscale** line offers a fix when Tailscale is the reason.
+3. Press **Open stick page…** and pick the built-in viewer or a browser. Only the modem's address goes through the tunnel.
+4. Close the window, or press **Quit**, and the tunnel is gone.
+
+**First run on another board or modem**: open Settings with Cmd-comma or the gear, set the targets (`user@host` and how each signs in), and press **Detect from box** to read the modem's address from the board.
+
+> [!WARNING]
+> The app never answers a host key question. Connect to each target once from Terminal first, so its key is in `~/.ssh/known_hosts`; otherwise the ssh line turns red *host key unknown*.
+
+---
+
 ## Where to start
 
 - **To understand the design**: [SPEC.md](SPEC.md), with the chain diagram, every ssh flag explained, and the status words.
 - **To see where it stands**: the [roadmap](#roadmap) below, and the note box at the top of [SPEC.md](SPEC.md).
-- **To build and try it**: [Building and checking from the command line](SPEC.md#building-and-checking-from-the-command-line) in SPEC, including the headless `--self-test` and `--simulate` for the Tailscale cases.
+- **To install and use it**: [Install](#install) and [Use](#use) above.
+- **To check it from a terminal**: [Building and checking from the command line](SPEC.md#building-and-checking-from-the-command-line) in SPEC: `--self-test`, `--simulate`, `--askpass-test` and the other switches.
 - **To see the real window**: [Screenshots](SPEC.md#screenshots) in SPEC.
 - **To change a mockup**: [assets/README.md](assets/README.md).
 - **For the manual commands this app replaces**: the server repo's [runbook 05, Read the stick](https://github.com/dattasaurabh82/orangepizero-solar-server/blob/main/runbooks/05-network-setup.md#read-the-stick).
@@ -148,10 +195,16 @@ lte-usb-modem-remote-stick-view/
 ├── SPEC.md          the design: tunnel, sign-in, routes, viewers, status lines
 ├── LICENSE          GNU LGPL 2.1
 ├── Package.swift    the Swift package: one app target, macOS 14 and later
-├── .gitignore
+├── .gitignore       ignores build output and the local working docs
+├── scripts/
+│   ├── build-app.sh     builds, signs and installs LTE Stick View.app
+│   └── make-icon.swift  draws Resources/AppIcon.png
+├── Resources/
+│   ├── Info.plist       the bundle's name, identifier, version, icon, minimum macOS
+│   └── AppIcon.png      the icon at 1024 pixels; the build makes the .icns from it
 ├── Sources/
 │   └── LTEStickView/
-│       ├── App.swift          app entry, quit handling, the --self-test mode
+│       ├── App.swift          app entry, quit handling, the self-test and askpass test modes
 │       ├── ContentView.swift  the main window: route switch, five lines, fix buttons, log
 │       ├── Tunnel.swift       the ssh process, readiness, failure reasons, retries, network changes, leftover cleanup
 │       ├── Route.swift        the port-22 probe for Auto, finding Tailscale and reading its status
@@ -174,7 +227,16 @@ lte-usb-modem-remote-stick-view/
 - [x] Step 4: built-in viewer
 - [x] Step 5: external browsers
 - [x] Step 6: settings, Keychain, askpass
-- [ ] Step 7: build script, icon, this README filled in
+- [x] Step 7: build script, icon, this README filled in
+
+### Still to check
+
+- [ ] The home network path: Auto picking *Home LAN*, and the built-in viewer over it
+- [ ] A real password login (not possible from the office)
+- [ ] A real network change with the window open (Wi-Fi off and on, or arriving home)
+- [ ] The Settings buttons clicked by hand: Apply, Revert, Save, Forget, the arrows, Add target
+- [ ] A Mac that really has no Tailscale, and a *relayed* Tailscale path
+- [ ] Brave, Vivaldi, Chromium and the Firefox variants, listed as untested
 
 ---
 

@@ -1,13 +1,13 @@
 # LTE Stick View specification
 
 > [!NOTE]
-> **Status**: settings and passwords are built (step 6 of 7): a Settings window edits the targets, the stick address and the SOCKS port, stores passwords in the Keychain, and hands them to ssh through the app's own askpass helper
+> **Status**: all seven steps are built; version 1.0.0 runs from `/Applications` as `LTE Stick View.app`, made by `scripts/build-app.sh`
 >
-> **Verified**: `2026-09-25` from the office: the thirteen checks of `--askpass-test` (Keychain round trip, the helper answering once through a private socket, declining a host key question, refusing a wrong token, and ssh starting the helper by itself); a password target with nothing saved stopping at *no password saved*; with a password saved, the same target connecting; **Detect from box** finding `192.168.8.1` on `lte0`; and from steps 3 to 5, Auto, the Tailscale line, reconnect, the built-in viewer, Chrome, Firefox and Edge
+> **Verified**: `2026-09-25` from the office, on the installed app launched with `open` as Finder does: connected over the tailnet, the proxy answering `200`, a normal quit ending ssh; the self-test all green and the thirteen askpass checks from inside the bundle; the built-in viewer loading the plain `http` page with no App Transport Security exception; and from steps 2 to 6, everything listed in their sections
 >
-> **Open**: a real password login (not possible from the office); Apply and the other Settings buttons clicked by hand; Tailscale SSH check mode; the LAN path at home; a real network change; the *relayed* path; a Mac without Tailscale; App Transport Security in the bundled app
+> **Open**: the home network path; a real password login; a real network change; the Settings buttons clicked by hand; a Mac without Tailscale and a relayed path; Tailscale SSH check mode; the untested browsers
 >
-> **Next**: step 7, the build script, the app icon and the README (see the [roadmap](README.md#roadmap))
+> **Next**: the open checks above, at home and by hand
 
 ---
 
@@ -334,14 +334,27 @@ Before ssh starts, the app checks the port by binding to it with `SO_REUSEADDR`,
 
 ## Build and install
 
-A native SwiftUI app with no third-party dependencies, built as a Swift package, with macOS 14 as the minimum because of the WebKit proxy API. A script builds the release binary, assembles `LTE Stick View.app` with its `Info.plist` and icon, signs it ad hoc for this Mac, and copies it into `/Applications`. The app costs nothing when it is not running; when it runs, it is one idle ssh process and a small window.
+A native SwiftUI app with no third-party dependencies, built as a Swift package, with macOS 14 as the minimum because of the WebKit proxy API. `scripts/build-app.sh` makes the app:
+
+1. **Icon**: scales `Resources/AppIcon.png` to the ten sizes of an iconset and turns them into `AppIcon.icns` with `iconutil`. The PNG itself is drawn by `scripts/make-icon.swift`; run `swift scripts/make-icon.swift` after changing that script.
+2. **Build**: `swift build -c release`.
+3. **Bundle**: `build/LTE Stick View.app` with the binary in `Contents/MacOS`, `Resources/Info.plist` as its Info.plist, and the icon.
+4. **Sign**: `codesign --force --sign -`, an ad hoc signature for this Mac, then `codesign --verify --strict`.
+5. **Install**: copies the bundle to `/Applications`, unless the script is given `--no-install`; it stops if a copy there is running.
+
+The Info.plist names the app *LTE Stick View* with the bundle identifier `work.dattasaurabh.LTEStickView`, version `1.0.0`, the icon, and macOS 14 as the minimum. It has no App Transport Security exception, because none is needed: on `2026-09-25` the built-in viewer of the installed app loaded `http://192.168.8.1/#/` without one, as the development binary had.
+
+> [!NOTE]
+> The installed app and the development binary keep separate settings, because macOS files user defaults by bundle identifier (`work.dattasaurabh.LTEStickView` for the app, `LTEStickView` for `.build/debug`). Keychain passwords are shared by account name, but after a rebuild macOS may ask once whether the new signature may read an item saved by the old one.
+
+The app costs nothing when it is not running; when it runs, it is one idle ssh process and a small window.
 
 > [!IMPORTANT]
 > The Mac it is built and tested on, as read off the machine on `2026-09-25`: macOS 27.0 on Apple silicon, Xcode with Swift 6.4, `OpenSSH_10.3p1` at `/usr/bin/ssh`, Tailscale 1.102.4 (the standalone app, CLI launcher at `/usr/local/bin/tailscale`). Apps registered for `http`: Google Chrome, Safari, Firefox, Arc, MKPlayer and iTerm.
 
 ### Building and checking from the command line
 
-Until the build script exists (step 7), the app is built and started from the repo folder:
+For development, the app is built and started from the repo folder without the bundle; everything below works the same on the installed binary, `/Applications/LTE Stick View.app/Contents/MacOS/LTEStickView`:
 
 ```bash
 swift build
@@ -412,7 +425,7 @@ lte stick    hollow  not checked
 
 ## Screenshots
 
-The real windows, captured on `2026-09-25` from the office.
+The real windows, captured on `2026-09-25` from the office; the main window and Settings from the installed app.
 
 ![The app connected over the tailnet: all five lines green, Tailscale direct](assets/app-main-window.png)
 
@@ -433,6 +446,10 @@ The real windows, captured on `2026-09-25` from the office.
 ![The chooser open under Open stick page: built-in viewer, Chrome, Firefox and Edge usable, Safari and Arc greyed with their reasons](assets/app-chooser.png)
 
 *The chooser on this Mac: three tested browsers besides the built-in viewer, Safari and Arc listed with why they cannot be used, Edge labelled last used.*
+
+![The Settings window: two targets with their sign-in mode, the stick address with Detect from box, the SOCKS port, the browsers found](assets/app-settings.png)
+
+*Settings in the installed app, with the default targets.*
 
 ---
 
