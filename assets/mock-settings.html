@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>LTE Stick View, settings mock</title><link rel="stylesheet" href="mock.css"></head>
+<body>
+<div class="win">
+  <div class="bar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="title">Settings</span></div>
+  <div class="body" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px">
+    <div>
+      <p class="lab">Targets, tried in this order</p>
+      <div class="row" style="grid-template-columns:16px minmax(0,1fr) 54px"><span class="dot hollow"></span><span>Home LAN <span class="sub mono">root@orangepizero.lan</span></span><span class="sub">key</span></div>
+      <div class="row" style="grid-template-columns:16px minmax(0,1fr) 54px"><span class="dot green"></span><span>Tailscale <span class="sub mono">root@orangepizero</span></span><span class="sub">tailnet</span></div>
+      <span class="btn" style="margin-top:8px">+ Add target</span>
+      <p class="lab" style="margin-top:16px">Password, only if a target asks (kept in Keychain)</p>
+      <div class="field sub">Not set</div>
+    </div>
+    <div>
+      <p class="lab">Stick address</p>
+      <div style="display:flex;gap:6px"><div class="field mono" style="flex:1">http://192.168.8.1/</div><span class="btn">Detect from box</span></div>
+      <p class="lab" style="margin-top:14px">SOCKS port</p>
+      <div class="field mono" style="width:90px">1080</div>
+      <p class="lab" style="margin-top:14px">Browsers found on this Mac</p>
+      <div style="line-height:1.95">
+        <div><span class="dot green"></span>&nbsp; Built-in viewer <span class="sub">WebKit, in the app</span></div>
+        <div><span class="dot green"></span>&nbsp; Google Chrome <span class="sub">separate profile</span></div>
+        <div><span class="dot green"></span>&nbsp; Firefox <span class="sub">temporary profile</span></div>
+        <div><span class="dot yellow"></span>&nbsp; Arc <span class="sub">untested</span></div>
+        <div class="off"><span class="dot hollow"></span>&nbsp; Safari <span class="sub">system proxy only</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

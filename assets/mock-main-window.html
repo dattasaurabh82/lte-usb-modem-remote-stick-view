@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>LTE Stick View, main window mock</title><link rel="stylesheet" href="mock.css"></head>
+<body>
+<div class="win">
+  <div class="bar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="title">LTE Stick View</span><span class="hint">closing this window ends the tunnel</span></div>
+  <div class="body">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px"><span class="k">Route</span><div class="seg"><span class="on">Auto</span><span>LAN</span><span>Tailscale</span></div></div>
+    <div class="row"><span class="dot green"></span><span class="k">route</span><span>Tailscale, direct <span class="sub">orangepizero.lan not reachable, peer online</span></span></div>
+    <div class="row"><span class="dot green"></span><span class="k">ssh session</span><span>up 00:12:41 <span class="sub">root@orangepizero, Tailscale SSH</span></span></div>
+    <div class="row"><span class="dot green"></span><span class="k">socks proxy</span><span class="mono">127.0.0.1:1080</span></div>
+    <div class="row"><span class="dot green"></span><span class="k">lte stick</span><span>reachable <span class="sub">E3372-325 at 192.168.8.1</span></span></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
+      <span class="btn primary">Open stick page…</span>
+      <span class="btn" style="margin-left:auto">Quit</span>
+    </div>
+    <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+      <p class="lab">&#9662; Command and log</p>
+      <div class="log mono">/usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 root@orangepizero<br>12:01:03 probe orangepizero.lan:22 no answer, orangepizero:22 open<br>12:01:04 socks up, stick answered device/information</div>
+    </div>
+  </div>
+</div>
+</body></html>
