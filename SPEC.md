@@ -328,7 +328,7 @@ A plain `kill` sent to the app (`SIGTERM`) is turned into a normal quit, so ssh 
 
 The port is fixed rather than picked at random on each connect, so a browser started earlier keeps working after a reconnect.
 
-Before ssh starts, the app checks the port by binding to it with `SO_REUSEADDR`, the way ssh itself binds. Without that option the check reported a port as taken by nobody for about 30 seconds after a viewer session: the connections the page made through the proxy stay in `TIME_WAIT` on `127.0.0.1:1080` for that long after they close (seven to nine of them, seen on `2026-09-25`), and ssh binds regardless. A process that really listens on the port is still caught and named, tested with a plain listener and with another `ssh -D`, which the app leaves running.
+Tailscale is read before the port check, so the tailscale line is right even when the port is taken. Before ssh starts, the app checks the port by binding to it with `SO_REUSEADDR`, the way ssh itself binds. Without that option the check reported a port as taken by nobody for about 30 seconds after a viewer session: the connections the page made through the proxy stay in `TIME_WAIT` on `127.0.0.1:1080` for that long after they close (seven to nine of them, seen on `2026-09-25`), and ssh binds regardless. A process that really listens on the port is still caught and named, tested with a plain listener and with another `ssh -D`, which the app leaves running.
 
 ---
 
@@ -425,7 +425,7 @@ lte stick    hollow  not checked
 
 ## Screenshots
 
-The real windows, captured on `2026-09-25` from the office; the main window and Settings from the installed app.
+The real windows, captured on `2026-09-25` from the office; the main window and Settings from the installed app. All twelve screenshots, including the failure states, are in the README under [What it looks like](README.md#what-it-looks-like).
 
 ![The app connected over the tailnet: all five lines green, Tailscale direct](assets/app-main-window.png)
 

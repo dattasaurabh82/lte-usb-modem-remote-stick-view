@@ -100,6 +100,10 @@ final class Tunnel {
             let leftover = await Task.detached { Orphan.endLeftover() }.value
             if let leftover { self.note(leftover) }
 
+            // Tailscale's state does not depend on the port, so it is read even when the port is taken.
+            await self.refreshTailscale(gen: gen)
+            guard gen == self.generation else { return }
+
             let free = await Task.detached { System.portIsFree(port) }.value
             guard gen == self.generation else { return }
             if !free {
@@ -112,9 +116,6 @@ final class Tunnel {
                 self.lastFailureRetryable = false
                 return
             }
-
-            await self.refreshTailscale(gen: gen)
-            guard gen == self.generation else { return }
 
             let target: Target
             if pick == Tunnel.auto {

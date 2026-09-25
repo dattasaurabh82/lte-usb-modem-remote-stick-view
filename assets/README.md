@@ -1,6 +1,6 @@
 # Assets
 
-The mockups of the app, each as an HTML source and the PNG rendered from it, and screenshots of the real app. They are what [SPEC.md](../SPEC.md#mockups) and the [README](../README.md) show.
+The mockups of the app, each as an HTML source and the PNG rendered from it, and screenshots of the real app. The mockups are shown in [SPEC.md](../SPEC.md#mockups); the screenshots make up the gallery in the [README](../README.md#what-it-looks-like).
 
 ## Files
 
@@ -10,6 +10,12 @@ The mockups of the app, each as an HTML source and the PNG rendered from it, and
 - `mock-settings.html`, `mock-settings.png`: the settings window.
 - `app-main-window.png`: a screenshot of the installed app, connected over the tailnet; also the README's hero image.
 - `app-settings.png`: the Settings window of the installed app, taken with `--show-settings`.
+- `app-settings-password.png`: Settings with the LAN target switched to password mode, written into the app's settings for the capture and removed after.
+- `app-reconnecting.png`: the main window a second after its ssh was killed, waiting to retry.
+- `app-port-in-use.png`: the main window with port 1080 held by a Python listener.
+- `app-home-lan-quiet.png`: *Home LAN* chosen by hand with `--simulate tailscale-missing`: the tailscale line stays hollow.
+- `app-tailscale-stopped.png`: taken with `--simulate tailscale-stopped`, the Open Tailscale button.
+- `app-chrome.png`: the separate Chrome instance the app started, showing the modem's page, scaled to 1400 pixels wide.
 - `app-tailscale-missing.png`: a screenshot of the real app started with `--simulate tailscale-missing`.
 - `app-viewer.png`: the built-in viewer with the stick's page, taken with `--open-viewer` and scaled to 1600 pixels wide.
 - `app-viewer-waiting.png`: the viewer waiting for the tunnel, taken with `--simulate tailscale-missing --open-viewer`, same scale.
