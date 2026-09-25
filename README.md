@@ -356,10 +356,33 @@ xattr -dr com.apple.quarantine "/Applications/LTE Stick View.app"
 
 Pushing a tag such as `v1.0.0` runs the **Release** workflow on GitHub's `macos-26` runner. It checks that the tag matches the version in `Resources/Info.plist`, builds a universal app with `scripts/build-app.sh --universal --dmg --no-install`, checks the signature, the two architectures and that the app starts, and publishes the release with the image and its checksum. The **Build** workflow does the same checks on every push, without publishing. The workflows are in `.github/workflows/`.
 
+**To publish a new version**, for example 1.0.1:
+
+1. Set the version in `Resources/Info.plist`: the version shown to people, and the build number, one higher than before.
+
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.1" Resources/Info.plist
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 2" Resources/Info.plist
 ```
+
+2. Commit and push that change, and wait for the **Build** workflow to pass.
+
+```bash
+git commit -am "Version 1.0.1"
+git push
+```
+
+3. Tag that commit with the same version, with a `v` in front, and push the tag. This starts the **Release** workflow.
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+4. The release appears under [Releases](https://github.com/dattasaurabh82/lte-usb-modem-remote-stick-view/releases) after about two minutes, with `LTE-Stick-View-1.0.1.dmg` and its checksum.
+
+> [!WARNING]
+> A tag that does not match the version in `Resources/Info.plist` stops the workflow before anything is built, with *Tag v1.0.1 does not match version 1.0.0 in Resources/Info.plist*. To fix it, delete the tag (`git tag -d v1.0.1` and `git push origin :refs/tags/v1.0.1`), set the version, commit, and tag again.
 
 </details>
 
