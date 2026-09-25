@@ -5,7 +5,10 @@ import SwiftUI
 @MainActor
 enum Main {
     static func main() {
+        // Started by ssh as its askpass program: answer and exit, nothing else.
+        if ProcessInfo.processInfo.environment[Askpass.flag] == "1" { Askpass.runHelper() }
         let args = CommandLine.arguments
+        if args.contains("--askpass-test") { AskpassTest.run() }
         if let i = args.firstIndex(of: "--simulate") {
             let what = args.dropFirst(i + 1).first ?? ""
             guard Tailscale.simulations.contains(what) else {
@@ -37,6 +40,10 @@ struct LTEStickViewApp: App {
             ViewerWindow(tunnel: Tunnel.shared)
         }
         .defaultSize(width: 1320, height: 860)
+
+        Settings {
+            SettingsView(tunnel: Tunnel.shared)
+        }
     }
 }
 
@@ -104,6 +111,10 @@ enum SelfTest {
             } else {
                 print(snapshot(t, title: nil))
             }
+            if CommandLine.arguments.contains("--detect") {
+                let (url, report) = await t.detectStick()
+                print("detect from box: \(report)" + (url.map { ", stick address \($0.absoluteString)" } ?? ""))
+            }
             print(t.log.joined(separator: "\n"))
             t.stop()
             exit(ok ? 0 : 1)
@@ -138,5 +149,78 @@ enum SelfTest {
         }
         if let fix = t.tailscaleFix { out += "             button: \(fix.label)\n" }
         return out
+    }
+}
+
+/// Headless check of the password chain, link by link, without a real password login:
+/// Keychain round trip, helper answering a password prompt through the one-time socket,
+/// helper declining a host key question, a wrong token, the socket answering only once,
+/// and ssh itself starting this binary as its askpass program.
+@MainActor
+enum AskpassTest {
+    static func run() -> Never {
+        var failures = 0
+        func check(_ ok: Bool, _ what: String) {
+            print((ok ? "ok    " : "FAIL  ") + what)
+            if !ok { failures += 1 }
+        }
+        let exe = Bundle.main.executableURL!.path
+
+        // 1. Keychain
+        let account = "lsv-selftest@example.invalid"
+        check(Keychain.set("first", for: account), "keychain: save")
+        check(Keychain.set("second", for: account), "keychain: update")
+        check(Keychain.password(for: account) == "second", "keychain: read back the updated value")
+        check(Keychain.delete(account), "keychain: delete")
+        check(Keychain.password(for: account) == nil, "keychain: gone after delete")
+
+        // 2. Helper answers a password prompt, once
+        func helper(_ prompt: String, env: [String: String]) -> (Int32, String) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: exe)
+            p.arguments = [prompt]
+            p.environment = ProcessInfo.processInfo.environment.merging(env) { _, n in n }
+            let out = Pipe()
+            p.standardOutput = out
+            try? p.run()
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            return (p.terminationStatus, String(decoding: data, as: UTF8.self).trimmingCharacters(in: .newlines))
+        }
+        let server = Askpass.Server(password: "s3cret with spaces")
+        check(server.start(), "socket: started at \(server.path)")
+        let perms = (try? FileManager.default.attributesOfItem(atPath: server.path)[.posixPermissions] as? Int) ?? 0
+        check(perms == 0o600, "socket: readable by this user only (\(String(perms, radix: 8)))")
+        let host = helper("Are you sure you want to continue connecting (yes/no/[fingerprint])?", env: server.environment)
+        check(host.0 != 0 && host.1.isEmpty, "helper: declines a host key question")
+        var wrong = server.environment
+        wrong[Askpass.tokenVar] = "not-the-token"
+        let bad = helper("root@box's password: ", env: wrong)
+        check(bad.0 != 0 && bad.1.isEmpty, "helper: a wrong token gets nothing")
+        let good = helper("root@box's password: ", env: server.environment)
+        check(good.0 == 0 && good.1 == "s3cret with spaces", "helper: answers a password prompt through the socket")
+        let again = helper("root@box's password: ", env: server.environment)
+        check(again.0 != 0 && again.1.isEmpty, "socket: answers only once")
+        check(!FileManager.default.fileExists(atPath: server.path), "socket: removed after answering")
+        server.stop()
+
+        // 3. ssh really starts this binary as its askpass program
+        let trace = "/tmp/lsv-askpass-trace-\(getpid()).txt"
+        let s2 = Askpass.Server(password: "unused")
+        _ = s2.start()
+        var env = s2.environment
+        env[Askpass.traceVar] = trace
+        let target = Tunnel.shared.config.targets.first { $0.signIn == .tailnet }?.userHost ?? "root@localhost"
+        let r = System.run("/usr/bin/ssh", ["-o", "BatchMode=no", "-o", "StrictHostKeyChecking=ask",
+                                            "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=8",
+                                            target, "true"], env: env)
+        let asked = (try? String(contentsOfFile: trace, encoding: .utf8)) ?? ""
+        check(asked.contains("asked:") && r.status != 0,
+              "ssh: started the helper by itself (\(asked.split(separator: "\n").first.map { String($0.prefix(70)) } ?? "no prompt")), and stopped when it declined")
+        s2.stop()
+        try? FileManager.default.removeItem(atPath: trace)
+
+        print(failures == 0 ? "all checks passed" : "\(failures) check(s) failed")
+        exit(failures == 0 ? 0 : 1)
     }
 }

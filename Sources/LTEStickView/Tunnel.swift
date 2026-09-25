@@ -11,7 +11,7 @@ final class Tunnel {
     static let shared = Tunnel()
     static let auto = "auto"
 
-    var config = Config()
+    private(set) var config = Config.load()
 
     /// "auto" or a target's name. Remembered between launches.
     var choice: String {
@@ -55,6 +55,7 @@ final class Tunnel {
     private var stickLoop: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
     private var generation = 0
+    private var askpass: Askpass.Server?
     private let monitor = NWPathMonitor()
     private var sawFirstPath = false
     private var netDebounce: Task<Void, Never>?
@@ -158,6 +159,31 @@ final class Tunnel {
         return targets[i]
     }
 
+    /// ssh options for a target: BatchMode for key and tailnet, the askpass helper for password mode.
+    static func signInOptions(_ t: Target) -> [String] {
+        t.signIn == .password
+            ? ["-o", "BatchMode=no", "-o", "NumberOfPasswordPrompts=1"]
+            : ["-o", "BatchMode=yes"]
+    }
+
+    /// For a password target: start a one-time askpass socket and return the environment for ssh.
+    /// nil when no password is saved for it.
+    private func askpassEnvironment(_ t: Target) -> [String: String]? {
+        askpass?.stop()
+        askpass = nil
+        guard let pw = Keychain.password(for: t.userHost) else { return nil }
+        let server = Askpass.Server(password: pw)
+        server.onRequest = { answered in
+            Task { @MainActor in
+                Tunnel.shared.note(answered ? "askpass: ssh asked for the password, answered from the Keychain"
+                                            : "askpass: refused a request with a wrong token")
+            }
+        }
+        guard server.start() else { return nil }
+        askpass = server
+        return server.environment
+    }
+
     private func launch(_ t: Target, port: UInt16, gen: Int) {
         let args = [
             "-N", "-D", "127.0.0.1:\(port)",
@@ -165,15 +191,23 @@ final class Tunnel {
             "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
             "-o", "ConnectTimeout=8",
             "-o", "StrictHostKeyChecking=yes",
-            "-o", "BatchMode=yes",
-            t.userHost,
-        ]
+        ] + Self.signInOptions(t) + [t.userHost]
         note((["/usr/bin/ssh"] + args).joined(separator: " "))
         ssh = Line(light: .yellow, word: "connecting", detail: t.userHost)
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         p.arguments = args
+        if t.signIn == .password {
+            guard let env = askpassEnvironment(t) else {
+                ssh = Line(light: .red, word: "failed", detail: "no password saved")
+                note("\(t.userHost) signs in with a password, and none is saved in the Keychain; add it in Settings")
+                lastReason = "no password saved"
+                lastFailureRetryable = false
+                return
+            }
+            p.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
+        }
         p.standardInput = FileHandle.nullDevice
         p.standardOutput = FileHandle.nullDevice
         let err = Pipe()
@@ -394,6 +428,8 @@ final class Tunnel {
     private func exited(how: String, gen: Int) {
         guard gen == generation else { return }
         stickLoop?.cancel()
+        askpass?.stop()
+        askpass = nil
         let wasUp = connectedAt != nil
         process = nil
         connectedAt = nil
@@ -494,6 +530,8 @@ final class Tunnel {
         generation += 1
         stopping = true
         wantsConnection = false
+        askpass?.stop()
+        askpass = nil
         retryTask?.cancel()
         retryAt = nil
         stickLoop?.cancel()
@@ -510,6 +548,48 @@ final class Tunnel {
         stick = Line(light: .hollow, word: "not checked")
         route = Line(light: .hollow, word: "not tried")
         note("ssh stopped")
+    }
+
+    /// Settings: save, drop a route choice whose target is gone, and reconnect with the new settings.
+    func apply(_ c: Config) {
+        let changed = c != config
+        config = c
+        c.save()
+        note("settings saved" + (changed ? "" : " (nothing changed)"))
+        guard changed else { return }
+        if choice != Tunnel.auto && !c.targets.contains(where: { $0.name == choice }) {
+            choice = Tunnel.auto  // the route switch's onChange reconnects
+        } else {
+            reconnect()
+        }
+    }
+
+    /// Detect from box: asks the box for its default routes and picks the one that leads to the modem.
+    /// Prefers an interface named like a modem (lte, wwan, usb, enx), else the only default route.
+    func detectStick() async -> (url: URL?, report: String) {
+        guard let t = active ?? config.targets.first else { return (nil, "no target to ask") }
+        let args = ["-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=yes"] + Self.signInOptions(t)
+            + [t.userHost, "ip -4 -o route show default"]
+        var env: [String: String] = [:]
+        if t.signIn == .password {
+            guard let e = askpassEnvironment(t) else { return (nil, "no password saved for \(t.userHost)") }
+            env = e
+        }
+        note("detect: asking \(t.userHost) for its default routes")
+        let r = await Task.detached { System.run("/usr/bin/ssh", args, env: env) }.value
+        guard r.status == 0 else { return (nil, "\(t.userHost) did not answer (ssh exit \(r.status))") }
+        let routes: [(gw: String, dev: String)] = r.out.split(separator: "\n").compactMap { line in
+            let w = line.split(separator: " ").map(String.init)
+            guard let v = w.firstIndex(of: "via"), let d = w.firstIndex(of: "dev"), v + 1 < w.count, d + 1 < w.count else { return nil }
+            return (w[v + 1], w[d + 1])
+        }
+        let modemLike = routes.first { r in ["lte", "wwan", "usb", "enx"].contains { r.dev.hasPrefix($0) } }
+        guard let pick = modemLike ?? (routes.count == 1 ? routes[0] : nil) else {
+            let seen = routes.map { "\($0.gw) on \($0.dev)" }.joined(separator: ", ")
+            return (nil, routes.isEmpty ? "the box has no default route" : "no modem-like interface among: \(seen)")
+        }
+        note("detect: \(pick.gw) on \(pick.dev)")
+        return (URL(string: "http://\(pick.gw)/"), "found \(pick.gw) on \(pick.dev) of \(t.host)")
     }
 
     /// Reconnect button and route switch: start over now, with the backoff reset.

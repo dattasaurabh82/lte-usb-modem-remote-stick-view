@@ -13,6 +13,9 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     /// --open-viewer opens the built-in viewer right at launch, for checks from a terminal.
     private let autoOpen = CommandLine.arguments.contains("--open-viewer")
+    @Environment(\.openSettings) private var openSettings
+    /// --show-settings opens the Settings window at launch, for screenshots.
+    private let showSettings = CommandLine.arguments.contains("--show-settings")
     /// --show-chooser opens the chooser at launch, for screenshots.
     private let showChooser = CommandLine.arguments.contains("--show-chooser")
     /// --open-in <name> opens that browser right at launch (waiting for the stick), for checks from a terminal.
@@ -61,6 +64,10 @@ struct ContentView: View {
                     Button("Reconnect") { tunnel.reconnect() }
                 }
                 Spacer()
+                SettingsLink { Image(systemName: "gearshape") }
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help("Settings: targets, stick address, SOCKS port, passwords")
                 Text("closing this window ends the tunnel")
                     .font(.callout)
                     .foregroundStyle(.tertiary)
@@ -95,6 +102,7 @@ struct ContentView: View {
         .task {
             tunnel.start()
             if autoOpen { openViewer() }
+            if showSettings { openSettings() }
             if showChooser {
                 try? await Task.sleep(for: .seconds(4))
                 chooserOpen = true

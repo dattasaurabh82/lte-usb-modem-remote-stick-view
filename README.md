@@ -7,7 +7,7 @@
 ![Platform: macOS 14 and later](https://img.shields.io/badge/platform-macOS%2014%2B-1e40af)
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-1e40af)
-![Status: step 5 of 7, external browsers](https://img.shields.io/badge/status-step%205%20of%207%2C%20external%20browsers-4a4946)
+![Status: step 6 of 7, settings and passwords](https://img.shields.io/badge/status-step%206%20of%207%2C%20settings%20and%20passwords-4a4946)
 ![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-4a4946)
 
 <img src="assets/mock-main-window.png" alt="LTE Stick View main window mockup: route switch, five status lines, Open stick page and Quit" width="720">
@@ -157,8 +157,10 @@ lte-usb-modem-remote-stick-view/
 │       ├── Route.swift        the port-22 probe for Auto, finding Tailscale and reading its status
 │       ├── Viewer.swift       the built-in viewer: a WebKit window that goes only through the tunnel
 │       ├── Browsers.swift     finding browsers, the proxy rule for the stick only, launching, cleanup
+│       ├── SettingsView.swift the Settings window: targets, stick address, port, passwords
+│       ├── Askpass.swift      Keychain passwords and the one-time askpass helper for ssh
 │       ├── System.swift       port checks, lsof and ps lookups, the stick probe
-│       └── Model.swift        targets, settings, status lines
+│       └── Model.swift        targets, saved settings, status lines
 └── assets/          mockups (HTML sources and rendered PNGs) and screenshots of the app, index in its README
 ```
 
@@ -171,7 +173,7 @@ lte-usb-modem-remote-stick-view/
 - [x] Step 3: Auto route choice and reconnect
 - [x] Step 4: built-in viewer
 - [x] Step 5: external browsers
-- [ ] Step 6: settings, Keychain, askpass
+- [x] Step 6: settings, Keychain, askpass
 - [ ] Step 7: build script, icon, this README filled in
 
 ---

@@ -1,13 +1,13 @@
 # LTE Stick View specification
 
 > [!NOTE]
-> **Status**: external browsers are built (step 5 of 7): the chooser lists the built-in viewer and the browsers found on the Mac, and a browser gets a proxy rule that sends only the stick's address through the tunnel
+> **Status**: settings and passwords are built (step 6 of 7): a Settings window edits the targets, the stick address and the SOCKS port, stores passwords in the Keychain, and hands them to ssh through the app's own askpass helper
 >
-> **Verified**: `2026-09-25` from the office: the stick's page loaded in Chrome 153, Firefox 132 and Edge 154 through the tunnel, with the box connecting only to the stick; Arc 1.164 ignored the launch and is listed as unusable; a browser picked before the tunnel was up opened when the stick answered; the everyday Chrome that was running stayed untouched; and from steps 3 and 4, Auto, the Tailscale line, reconnect, the built-in viewer
+> **Verified**: `2026-09-25` from the office: the thirteen checks of `--askpass-test` (Keychain round trip, the helper answering once through a private socket, declining a host key question, refusing a wrong token, and ssh starting the helper by itself); a password target with nothing saved stopping at *no password saved*; with a password saved, the same target connecting; **Detect from box** finding `192.168.8.1` on `lte0`; and from steps 3 to 5, Auto, the Tailscale line, reconnect, the built-in viewer, Chrome, Firefox and Edge
 >
-> **Open**: the LAN path, to be run at home; a real network change; the *relayed* path; a Mac without Tailscale; App Transport Security in the bundled app; Brave, Vivaldi, Chromium and the Firefox variants, listed as untested
+> **Open**: a real password login (not possible from the office); Apply and the other Settings buttons clicked by hand; Tailscale SSH check mode; the LAN path at home; a real network change; the *relayed* path; a Mac without Tailscale; App Transport Security in the bundled app
 >
-> **Next**: step 6, settings, Keychain password and askpass (see the [roadmap](README.md#roadmap))
+> **Next**: step 7, the build script, the app icon and the README (see the [roadmap](README.md#roadmap))
 
 ---
 
@@ -94,15 +94,30 @@ There are three ways a target can sign in, and the app picks per target, set in 
 
 1. **Tailnet**: the tailnet target (`root@orangepizero`) uses **Tailscale SSH**, which signs in by tailnet identity. No key and no password are involved.
 2. **Key**: the LAN target (`root@orangepizero.lan`) uses the Mac's SSH key, set up for this box in `2026-09`. `BatchMode=yes` is on.
-3. **Password**: for any target that asks. The password is kept only in the macOS **Keychain**, as a generic password with the service name `LTE Stick View` and the account `user@host`.
+3. **Password**: for any target that asks. The password is kept only in the macOS **Keychain**, as a generic password with the service name `LTE Stick View` and the account `user@host`, saved or forgotten from Settings.
 
-For the password case, ssh is started with `SSH_ASKPASS` pointing at the app's own binary and `SSH_ASKPASS_REQUIRE=force` (OpenSSH 8.4 and later; the Mac has 10.3). When ssh needs the password, it runs the app binary as its helper. The helper asks the running app over a private Unix socket, presenting a one-time token, and gets the password once. The password never reaches disk, the command line, or a lasting environment variable. The helper only answers password prompts; anything else it is asked, it declines.
+For the password case, ssh runs with `BatchMode=no` and `NumberOfPasswordPrompts=1`, with `SSH_ASKPASS` pointing at the app's own binary and `SSH_ASKPASS_REQUIRE=force` (OpenSSH 8.4 and later; the Mac has 10.3).
+
+**How the password reaches ssh.**
+
+1. Before starting ssh, the app reads the password from the Keychain and opens a Unix socket at `/tmp/lsv-<pid>-<id>.sock`, readable by this user only (mode `600`), with a random one-time token.
+2. When ssh needs the password, it starts the app's binary with the prompt as its argument. The binary sees `LSV_ASKPASS=1` in its environment and acts as the helper instead of opening a window.
+3. The helper connects to the socket, presents the token, prints the password it gets back to ssh, and exits.
+4. The socket answers once and removes itself. A wrong token gets nothing.
+
+The password never reaches disk, the command line, or a lasting environment variable. The helper only answers prompts that ask for a password; a host key question or a key passphrase is declined, so ssh stops instead of guessing.
+
+> [!WARNING]
+> With no password saved for a password target, the ssh line turns red *no password saved* and the log says to add it in Settings. No attempt is retried until then, because waiting cannot fix it.
+
+> [!NOTE]
+> A real password login has not been tried yet. From the office the only way to our board is the tailnet, which goes through Tailscale SSH and never asks for a password; it needs a target reached on a network where the board's own sshd answers. Every link of the chain up to it is checked by `--askpass-test`.
 
 > [!WARNING]
 > A host key the Mac has never seen, or one that changed, fails the connection with a red **ssh session** line and the reason in the log. The app never accepts a host key for you. Connect once from Terminal, check the fingerprint, and try again.
 
 > [!NOTE]
-> If the tailnet policy ever turns on Tailscale SSH check mode, ssh prints a sign-in URL and waits. The app shows that URL in the log as a link and keeps the ssh line yellow until the check passes.
+> Tailscale SSH check mode is not handled. If the tailnet policy ever turns it on, ssh prints a sign-in URL and waits; the URL shows in the log as ssh's own line, and the 10 second wait for the SOCKS port ends the attempt as *timed out* before anyone could sign in. Not seen yet; our tailnet does not use check mode.
 
 ---
 
@@ -279,7 +294,7 @@ The main window has five lines, each with its own dot. Green means working, yell
 
 - **route**: which target is in use. Yellow *probing* while Auto probes the targets, or *trying* while a named target connects; green with the target's name and, over the tailnet, *direct*; yellow *relayed via* a region; red *no route* when the host could not be reached (*name not found*, *timed out* or *refused*) or no target answered the probe; red *lost* when a working session dropped. The grey detail lists the host and the targets Auto skipped, with why. Grey *not tried* before the first connect.
 - **tailscale**: whether Tailscale can carry the tailnet route, as laid out in [Without Tailscale](#without-tailscale): green *running*; hollow *not installed* or *not used*; yellow or red *not installed*, *stopped*, *not started*, *starting*, *signed out*, *installed* or *running* with the reason, red only when it is why the box cannot be reached. Grey *not checked* before the first reading.
-- **ssh session**: grey *down*; yellow *connecting*; green *up* with the time since connect, as in *up 00:12:41*, and the target; yellow *waiting* with the countdown to the next attempt (*retrying now* at zero), the attempt number and the last reason, which can also be *no route*; red *failed* with the reason, one of *sign-in refused*, *host key unknown*, *host key changed*, *port in use*, *name not found*, *timed out*, *refused*, *link lost* (the server stopped answering or the connection was cut), or *exited* for anything else, in which case the log holds ssh's own words.
+- **ssh session**: grey *down*; yellow *connecting*; green *up* with the time since connect, as in *up 00:12:41*, and the target; yellow *waiting* with the countdown to the next attempt (*retrying now* at zero), the attempt number and the last reason, which can also be *no route*; red *failed* with the reason, one of *sign-in refused*, *host key unknown*, *host key changed*, *port in use*, *name not found*, *timed out*, *refused*, *link lost* (the server stopped answering or the connection was cut), *no password saved*, or *exited* for anything else, in which case the log holds ssh's own words.
 - **socks proxy**: grey *off*; green with the address, `127.0.0.1:1080`; red *port in use* with the name of the process holding it.
 - **lte stick**: grey *not checked*; yellow *checking*; green *reachable* with the model and address; red *no answer* when the box is reachable but the stick is not (unplugged, or `lte0` down on the box).
 
@@ -289,13 +304,17 @@ When no session is running, a **Reconnect** button appears on the left; it start
 
 ## Settings
 
-- **Targets**: name, `user@host`, sign-in mode (tailnet, key or password), in the order Auto tries them. Defaults: *Home LAN*, `root@orangepizero.lan`, key; *Tailscale*, `root@orangepizero`, tailnet.
-- **Password**: stored in the Keychain only, per target, used only by targets in password mode.
-- **Stick address**: default `http://192.168.8.1/`. **Detect from box** runs `ip -4 route show default dev lte0` on the box, through the target in use, as one short extra ssh command, and takes the gateway after `via`, so the address comes from the box instead of from memory. On our box the answer is `default via 192.168.8.1 proto dhcp metric 300` (checked `2026-09-25`).
-- **SOCKS port**: default `1080`. When saved, the app checks the port is free and suggests the next free one if not.
-- **Browsers found on this Mac**: read-only, what was found and how each will be started.
+The Settings window opens with Cmd-comma or the gear next to the hint in the main window. It edits a draft: **Apply** checks it, saves it and reconnects with it, and **Revert** goes back to what is in use. Nothing half-typed reaches the running tunnel.
 
-Plain settings live in the app's user defaults (bundle identifier `work.dattasaurabh.LTEStickView`). Secrets live in the Keychain only.
+- **Targets**: name, `user@host`, and sign-in mode (*Tailnet*, *Key* or *Password*), in the order Auto tries them, reordered with the arrows. Defaults: *Home LAN*, `root@orangepizero.lan`, key; *Tailscale*, `root@orangepizero`, tailnet. At least one target stays. Removing the target the route switch points at sets the switch back to Auto.
+- **Password**: a target in password mode shows a password field with **Save** and **Forget**. Save writes it to the Keychain at once, under that target's `user@host`; the field never shows a saved password, only that one is saved.
+- **Stick address**: default `http://192.168.8.1/`. **Detect from box** asks the box for its default routes, `ip -4 -o route show default`, through the target in use (or the first target), and takes the gateway on an interface named like a modem (`lte`, `wwan`, `usb` or `enx` at the start), or the only default route if there is just one. The answer shows under the field and fills it in; Apply keeps it. On our box it found `192.168.8.1 on lte0` on `2026-09-25`, although Wi-Fi is the box's first default route.
+- **SOCKS port**: default `1080`. On Apply, a changed port is checked the same way as at connect; if it is taken, the message names the holder and the next free port.
+- **Browsers found on this Mac**: read-only, what was found and how each is started, as in the chooser.
+
+Apply refuses, with a line saying why: a stick address that is not an `http` or `https` address with a host, a port below 1024 or not a number, a target without a name or a proper `user@host`, and two targets with the same name.
+
+Plain settings live in the app's user defaults as one JSON value under `config`, next to `route` (the route switch) and `lastViewer` (the chooser's label). The development binary and the bundled app keep separate defaults, because macOS files them by bundle identifier. Secrets live in the Keychain only.
 
 ---
 
@@ -338,9 +357,11 @@ The same binary has a headless check, `--self-test`, which connects, waits for t
 .build/debug/LTEStickView --simulate tailscale-missing
 .build/debug/LTEStickView --open-viewer --log-stdout
 .build/debug/LTEStickView --open-in firefox --log-stdout
+.build/debug/LTEStickView --askpass-test
+.build/debug/LTEStickView --self-test auto --detect
 ```
 
-A few more switches help check the window from a terminal: `--open-viewer` opens the built-in viewer right at launch; `--open-in` followed by part of a browser's name picks that browser at launch, which then opens once the stick answers; `--show-chooser` opens the chooser four seconds after launch, for screenshots; and `--log-stdout` prints every log line to the terminal as well.
+A few more switches help check the window from a terminal: `--open-viewer` opens the built-in viewer right at launch; `--open-in` followed by part of a browser's name picks that browser at launch, which then opens once the stick answers; `--show-chooser` opens the chooser four seconds after launch and `--show-settings` the Settings window, both for screenshots; `--askpass-test` runs the password chain checks described in [Signing in](#signing-in) and exits; `--detect` after `--self-test` also runs Detect from box once connected; and `--log-stdout` prints every log line to the terminal as well.
 
 This is what `--self-test auto --drop` printed from the office on `2026-09-25`:
 
