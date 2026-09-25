@@ -2,7 +2,7 @@
 
 # lte-usb-modem-remote-stick-view
 
-**LTE Stick View: a small Mac app that opens the web page of the LTE stick on the Orange Pi Zero, through an SSH SOCKS tunnel via the box, from one window.**
+**LTE Stick View: a small Mac app that opens the web page of a connected USB LTE stick on an Orange Pi Zero (or any other SBC with no GUI), through an SSH SOCKS tunnel via the box, from one window, so you can visit the configuration page of that modem.**
 
 ![Platform: macOS 14 and later](https://img.shields.io/badge/platform-macOS%2014%2B-1e40af)
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
