@@ -2,7 +2,7 @@
 
 # lte-usb-modem-remote-stick-view
 
-**LTE Stick View: a small Mac app that opens the web page of a connected USB LTE stick on an Orange Pi Zero (or any other SBC with no GUI), through an SSH SOCKS tunnel via the box, from one window, so you can visit the configuration page of that modem.**
+**LTE Stick View: a small Mac app that opens the configuration page of a USB LTE modem plugged into a remote, headless Linux board (an Orange Pi Zero in our case, but any SBC or server you can SSH into), by tunnelling through that board, from one window.**
 
 ![Platform: macOS 14 and later](https://img.shields.io/badge/platform-macOS%2014%2B-1e40af)
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
@@ -14,7 +14,7 @@
 
 </div>
 
-The Huawei stick that gives the Orange Pi Zero its mobile connection has its own web page at `192.168.8.1`, and only the box can reach it. From the Mac that takes an `ssh -D` tunnel in one terminal and a specially started browser in another, with the right host name for wherever we are. This app does the same thing from `/Applications`: it picks the route, holds the tunnel, proves the stick answers, and opens the page in the viewer you choose.
+Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve their own configuration page on a small private network that only the computer they are plugged into can see. When that computer is a board with no screen, somewhere else, reaching the page from a laptop takes an SSH tunnel and a specially started browser. This app does that from `/Applications`: it picks the route to the board, holds the tunnel, proves the modem answers, and opens the page in the viewer you choose.
 
 > [!NOTE]
 > The mockup above is the agreed design, not a screenshot. The app is being built step by step; where it stands is in the [roadmap](#roadmap) below, and [SPEC.md](SPEC.md) is kept up to date as it is built.
@@ -26,6 +26,9 @@ The Huawei stick that gives the Orange Pi Zero its mobile connection has its own
 - [lte-usb-modem-remote-stick-view](#lte-usb-modem-remote-stick-view)
   - [Contents](#contents)
   - [At a glance](#at-a-glance)
+  - [Why this exists](#why-this-exists)
+    - [The chore, in our case](#the-chore-in-our-case)
+    - [What the app does instead](#what-the-app-does-instead)
   - [Where to start](#where-to-start)
   - [Repository layout](#repository-layout)
   - [Roadmap](#roadmap)
@@ -42,6 +45,81 @@ The Huawei stick that gives the Orange Pi Zero its mobile connection has its own
 - **Browsers**: the built-in WebKit viewer, the Chromium family with their own profile, Firefox with a temporary profile; Safari is listed but not usable.
 - **Leaves nothing behind**: no system proxy changes; quitting ends the tunnel.
 - **Built with**: Swift and SwiftUI, no third-party dependencies.
+
+---
+
+## Why this exists
+
+A USB LTE modem in router mode shows up on the board as a network card with its own little subnet, and the modem sits at the gateway address of that subnet with a web page for the SIM, the signal, the APN and the data counters. Only the board can reach that address. Your laptop cannot, even when it can SSH into the board.
+
+The obvious fix, an SSH **port forward**, often gives a blank page. Many of these modems check the `Host` header of every request, and a forwarded request arrives as `localhost:8081` instead of the modem's own address, so the modem redirects the browser to an address the laptop has no route to.
+
+What works is a **SOCKS proxy** through the board: `ssh -D` opens a local port, the browser sends every request through it, and the board opens each connection on the browser's behalf. The browser asks for the modem by its real address, the `Host` header is right, and the page loads.
+
+### The chore, in our case
+
+> [!IMPORTANT]
+> Our board is an Orange Pi Zero, `orangepizero.lan` at home and `orangepizero` over Tailscale anywhere else. The modem is a Huawei E3372h-320 in HiLink mode at `192.168.8.1`. The outputs below were captured on `2026-09-25` over Tailscale. The server side is written up in [runbook 05, Read the stick](https://github.com/dattasaurabh82/orangepizero-solar-server/blob/main/runbooks/05-network-setup.md#read-the-stick).
+
+**What does not work: a plain port forward.**
+
+```bash
+ssh -N -L 8081:192.168.8.1:80 root@orangepizero
+curl -s -D - -o /dev/null http://localhost:8081/
+```
+
+The modem answers with a redirect and no body:
+
+```text
+HTTP/1.1 307
+LOCATION: http://192.168.8.1/html/index.html?origin=xxx
+Content-Type: text/plain
+Content-Length: 0
+```
+
+**What works, by hand, every time:**
+
+1. Open a first terminal and start the SOCKS proxy, picking the host name by where you are, and leave the session open:
+
+```bash
+ssh -D 1080 root@orangepizero.lan    # at home, on the LAN
+ssh -D 1080 root@orangepizero        # anywhere else, over Tailscale
+```
+
+2. Open a second terminal and start a browser that uses only that proxy, with a profile of its own so the everyday browser is untouched:
+
+```bash
+open -na "Google Chrome" --args --proxy-server="socks5://127.0.0.1:1080" --user-data-dir=/tmp/stick-browser http://192.168.8.1/
+```
+
+3. Or check from the command line through the same proxy:
+
+```bash
+curl -s -D - -o /dev/null --socks5-hostname 127.0.0.1:1080 http://192.168.8.1/
+```
+
+```text
+HTTP/1.1 200 OK
+Content-Type: text/html
+Content-Length: 3106
+```
+
+4. When done, close the browser and end the SSH session.
+
+That is two terminals, a host name to remember, a long browser command to find again, and a session that is easy to leave running.
+
+*The app exists so that none of this has to be remembered.*
+
+### What the app does instead
+
+- **Picks the route**: tries the LAN name and the Tailscale name and uses whichever answers.
+- **Holds the tunnel**: the same `ssh -D`, started and stopped with the window, with the exact command visible in the log.
+- **Proves the chain**: shows green only once the modem itself has answered through the tunnel.
+- **Opens the page**: in a built-in viewer or a browser picked each time, started with the proxy and its own profile.
+
+For another board or modem, change the targets and the modem's address in Settings; our box is only the default.
+
+**Everything else is in [SPEC.md](SPEC.md).**
 
 ---
 
