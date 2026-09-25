@@ -1,13 +1,13 @@
 # LTE Stick View specification
 
 > [!NOTE]
-> **Status**: the built-in viewer is built (step 4 of 7): **Open stick page…** opens the stick's own page in a WebKit window whose traffic goes only through the tunnel, and it waits for the tunnel and reloads after a drop on its own; external browsers come in step 5
+> **Status**: external browsers are built (step 5 of 7): the chooser lists the built-in viewer and the browsers found on the Mac, and a browser gets a proxy rule that sends only the stick's address through the tunnel
 >
-> **Verified**: `2026-09-25` from the office: the stick's page loaded in the viewer through the tunnel, while this Mac cannot reach `192.168.8.1` directly; opened before the tunnel was up, it waited and said so; ssh killed with the page open, tunnel back 3 s later and the page reloaded 3 s after that; quit with the viewer open left no ssh and no WebKit process; and from step 3, Auto, the Tailscale line and its four simulated failures, reconnect with backoff
+> **Verified**: `2026-09-25` from the office: the stick's page loaded in Chrome 153, Firefox 132 and Edge 154 through the tunnel, with the box connecting only to the stick; Arc 1.164 ignored the launch and is listed as unusable; a browser picked before the tunnel was up opened when the stick answered; the everyday Chrome that was running stayed untouched; and from steps 3 and 4, Auto, the Tailscale line, reconnect, the built-in viewer
 >
-> **Open**: the LAN path, to be run at home; a real network change; the *relayed* path; a Mac that really has no Tailscale; whether the bundled app of step 7 still loads plain `http` without an App Transport Security exception; Arc's flags and the Firefox launch
+> **Open**: the LAN path, to be run at home; a real network change; the *relayed* path; a Mac without Tailscale; App Transport Security in the bundled app; Brave, Vivaldi, Chromium and the Firefox variants, listed as untested
 >
-> **Next**: step 5, external browsers (see the [roadmap](README.md#roadmap))
+> **Next**: step 6, settings, Keychain password and askpass (see the [roadmap](README.md#roadmap))
 
 ---
 
@@ -182,8 +182,7 @@ While connected, the stick check repeats every 30 seconds. It costs no SIM data:
 
 **Open stick page…** asks every time. It opens a chooser listing the built-in viewer and every usable browser found on the Mac. The one used last carries the label *last used*, but nothing is preselected and no default is stored.
 
-> [!NOTE]
-> Built so far: the chooser is a menu on the button, and it lists the built-in viewer only. The browsers join it in step 5.
+The chooser is a popover on the button. It looks for browsers afresh every time it opens, so one installed meanwhile shows up. Picking a browser before the tunnel is up is fine: it opens as soon as the stick answers, and the log says so.
 
 ### The built-in viewer
 
@@ -203,6 +202,8 @@ The window has back, forward and reload, the address in use, and on the right a 
 > [!NOTE]
 > The stick's page is wider than about 1300 points and scrolls sideways in a narrower window. The viewer opens at 1320 by 860 points the first time; after that macOS remembers the size you leave it at.
 
+The built-in viewer sends all its traffic through the tunnel, which is fine because it only ever shows the stick's page, and that page loads nothing from the internet: with it open on `2026-09-25` the box connected to the stick 5 times and to nothing else.
+
 **Nothing on the page is touched by the app.** It only loads it. The page has live controls, *Disable Mobile Data* among them, that act on the modem in the field.
 
 > [!WARNING]
@@ -212,33 +213,63 @@ The window has back, forward and reload, the address in use, and on the right a 
 
 The list comes from the system: every app registered to open `http` URLs, found with `NSWorkspace.urlsForApplications(toOpen:)`. Each one is matched by bundle identifier against a small table of launch strategies. Apps that match nothing are left out, which is how iTerm and MKPlayer, both registered for `http` on this Mac, stay off the list.
 
-**Chromium family** (Google Chrome, Brave, Microsoft Edge, Chromium, Vivaldi, Arc): started as a separate instance with the proxy and a profile of its own, so the everyday browser and its windows are untouched.
+**Only the stick goes through the tunnel.** A browser does not get the tunnel as its proxy for everything. It gets a **proxy auto-config** (PAC) script, built from the stick address in Settings, that sends that one host through the tunnel and everything else direct from the Mac:
+
+```javascript
+function FindProxyForURL(url, host) {
+  if (host === "192.168.8.1") return "SOCKS5 127.0.0.1:1080";
+  return "DIRECT";
+}
+```
+
+> [!WARNING]
+> The first design sent all of a browser's traffic through the tunnel, and a test on `2026-09-25` showed why that is wrong.
+>
+> **A fresh browser profile is busy.** Firefox on its first run fetched updates, safe-browsing lists and its start page, and all of it went through the tunnel. The box then sent it on to the internet itself: about 20 connections from `tailscaled` to hosts such as Fastly and Google, against 3 at rest.
+>
+> **On our box, that meant the SIM.** The box reaches the internet over IPv4 through Wi-Fi at the desk, but its only IPv6 route is the SIM, and those hosts answer over IPv6. The stick's counter for the current connection went from 12.1 MB to 81.0 MB in those four minutes.
+>
+> **With the PAC script, the box sees only the stick.** In the same test, Chrome, Firefox and Edge each made 5 or 6 connections through the box, all to `192.168.8.1`, with the box's internet connections staying at 3 and the counter still.
+
+The script is passed as a `data:` URL, so there is no file to write or clean up for it.
+
+**Chromium family** (Google Chrome, Microsoft Edge, Brave, Chromium, Vivaldi): started as a separate instance with the PAC script and a profile of its own under `~/Library/Application Support/LTE Stick View/profiles/`, one folder per browser, kept between launches. The everyday browser and its windows are untouched, even while it runs.
 
 ```bash
 open -na "Google Chrome" --args \
-  --proxy-server="socks5://127.0.0.1:1080" \
-  --user-data-dir="$HOME/Library/Application Support/LTE Stick View/profiles/chrome" \
+  --proxy-pac-url="data:application/x-ns-proxy-autoconfig;base64,<the script above>" \
+  --user-data-dir="$HOME/Library/Application Support/LTE Stick View/profiles/com.google.Chrome" \
+  --no-first-run --no-default-browser-check \
   http://192.168.8.1/
 ```
 
-**Firefox family** (Firefox, Firefox Developer Edition, Nightly): Firefox has no command-line proxy switch, so the app writes a fresh profile into a temporary folder, with a `user.js` that sets the proxy, and deletes the folder when the app quits.
+**Firefox family** (Firefox, Firefox Developer Edition, Nightly): Firefox has no command-line proxy switch, so the app writes a fresh profile into a temporary folder named `lte-stick-view-firefox-` and a short ID, with a `user.js` that points Firefox at the PAC script and skips its first-run screens.
 
 ```javascript
-user_pref("network.proxy.type", 1);
-user_pref("network.proxy.socks", "127.0.0.1");
-user_pref("network.proxy.socks_port", 1080);
-user_pref("network.proxy.socks_version", 5);
-user_pref("network.proxy.socks_remote_dns", true);
+user_pref("network.proxy.type", 2);
+user_pref("network.proxy.autoconfig_url", "data:application/x-ns-proxy-autoconfig;base64,...");
 user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
+user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
 ```
 
 ```bash
-open -na "Firefox" --args -profile "$TMPDIR/lte-stick-view-firefox" -no-remote -new-instance http://192.168.8.1/
+open -na "Firefox" --args -profile "$TMPDIR/lte-stick-view-firefox-1A2B3C4D" -no-remote -new-instance http://192.168.8.1/
 ```
 
-**Safari** is listed but greyed out. It only follows the system-wide proxy, and this app does not change system settings.
+> [!NOTE]
+> Firefox restarts itself once on a fresh profile, so the process the app started is not the one that shows the page. That is harmless; it only matters to anyone closing it by process ID.
 
-Each strategy carries a tested flag. A browser whose launch has not been run on this Mac shows a yellow dot and the word *untested*; it still works from the chooser, and the flag is cleared in the table once its launch has been seen to reach the stick. Arc is the first case.
+Temporary Firefox profiles are deleted at launch and at quit, each one only when no running process still uses it, so a Firefox left open keeps its profile until the next launch of the app.
+
+**Listed but not usable**, shown with a hollow dot, their reason, and a tooltip saying why:
+
+1. **Safari**: it only follows the system-wide proxy, and this app does not change system settings.
+2. **Arc**: Chromium inside, but on `2026-09-25` it ignored the launch completely. Arc 1.164 opened its normal window with the command bar, took neither the URL nor the profile folder, and so never saw the proxy rule.
+
+Each strategy carries a tested flag, set only after the stick page has been seen to load through the tunnel with the box connecting to nothing but the stick. Tested on `2026-09-25`: Google Chrome 153, Firefox 132 and Microsoft Edge 154. A browser not yet tested shows a yellow dot and *untested*, and can still be used.
 
 ---
 
@@ -270,7 +301,7 @@ Plain settings live in the app's user defaults (bundle identifier `work.dattasau
 
 ## Lifecycle
 
-Closing the main window quits the app, also while viewer windows are open, and quitting ends the tunnel: ssh gets `SIGTERM`, then `SIGKILL` after 2 seconds if it is still there, and the temporary Firefox profile is deleted. Viewer windows close with the app, and their WebKit helper processes end with it. Browser windows opened through the tunnel stay open but stop loading.
+Closing the main window quits the app, also while viewer windows are open, and quitting ends the tunnel: ssh gets `SIGTERM`, then `SIGKILL` after 2 seconds if it is still there, and temporary Firefox profiles no longer in use are deleted. Viewer windows close with the app, and their WebKit helper processes end with it. Browser windows opened through the tunnel stay open but stop loading.
 
 If the app ever dies without cleaning up, its ssh could be left running. To catch that, the app writes the ssh process ID to `~/Library/Application Support/LTE Stick View/ssh.pid`. On the next launch, if that process is still alive and is our ssh, it is ended before anything else starts.
 
@@ -306,9 +337,10 @@ The same binary has a headless check, `--self-test`, which connects, waits for t
 .build/debug/LTEStickView --self-test auto --simulate tailscale-missing
 .build/debug/LTEStickView --simulate tailscale-missing
 .build/debug/LTEStickView --open-viewer --log-stdout
+.build/debug/LTEStickView --open-in firefox --log-stdout
 ```
 
-Two more switches help check the window from a terminal: `--open-viewer` opens the built-in viewer right at launch, and `--log-stdout` prints every log line to the terminal as well.
+A few more switches help check the window from a terminal: `--open-viewer` opens the built-in viewer right at launch; `--open-in` followed by part of a browser's name picks that browser at launch, which then opens once the stick answers; `--show-chooser` opens the chooser four seconds after launch, for screenshots; and `--log-stdout` prints every log line to the terminal as well.
 
 This is what `--self-test auto --drop` printed from the office on `2026-09-25`:
 
@@ -376,6 +408,10 @@ The real windows, captured on `2026-09-25` from the office.
 ![The built-in viewer waiting for the tunnel](assets/app-viewer-waiting.png)
 
 *The viewer opened while the tunnel could not come up: it waits, and loads the page once the stick answers.*
+
+![The chooser open under Open stick page: built-in viewer, Chrome, Firefox and Edge usable, Safari and Arc greyed with their reasons](assets/app-chooser.png)
+
+*The chooser on this Mac: three tested browsers besides the built-in viewer, Safari and Arc listed with why they cannot be used, Edge labelled last used.*
 
 ---
 

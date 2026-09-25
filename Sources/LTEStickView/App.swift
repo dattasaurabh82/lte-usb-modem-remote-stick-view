@@ -52,12 +52,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         src.setEventHandler { NSApp.terminate(nil) }
         src.resume()
         sigterm = src
+        MainActor.assumeIsolated { Browsers.cleanTemporaryProfiles() }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { Tunnel.shared.stop() }
+        MainActor.assumeIsolated {
+            Tunnel.shared.stop()
+            Browsers.cleanTemporaryProfiles()
+        }
     }
 }
 

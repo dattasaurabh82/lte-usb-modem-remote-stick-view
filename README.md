@@ -7,7 +7,7 @@
 ![Platform: macOS 14 and later](https://img.shields.io/badge/platform-macOS%2014%2B-1e40af)
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-1e40af)
-![Status: step 4 of 7, built-in viewer](https://img.shields.io/badge/status-step%204%20of%207%2C%20built--in%20viewer-4a4946)
+![Status: step 5 of 7, external browsers](https://img.shields.io/badge/status-step%205%20of%207%2C%20external%20browsers-4a4946)
 ![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-4a4946)
 
 <img src="assets/mock-main-window.png" alt="LTE Stick View main window mockup: route switch, five status lines, Open stick page and Quit" width="720">
@@ -47,7 +47,8 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
 - **Routes**: home LAN (`root@orangepizero.lan`) or the tailnet (`root@orangepizero`), chosen automatically by which one answers, with the Tailscale path (direct or relayed) on the route line and a reconnect of its own when the link drops.
 - **Tailscale is optional**: needed only away from the home network. The app never asks for it at launch; a status line says when it is the reason the box cannot be reached and offers *Get Tailscale* or *Open Tailscale* right there.
 - **Sign-in**: Tailscale SSH on the tailnet, the Mac's key on the LAN, a Keychain password for any target that asks.
-- **Viewers**: the built-in WebKit viewer (built), which waits for the tunnel and reloads after a drop by itself; then the Chromium family with their own profile and Firefox with a temporary profile (step 5); Safari is listed but not usable.
+- **Viewers**: the built-in WebKit viewer, which waits for the tunnel and reloads after a drop by itself; Chrome, Edge and the other Chromium browsers with a profile of their own; Firefox with a temporary profile. Safari and Arc are listed with why they cannot be used.
+- **Only the stick goes through the tunnel**: a browser gets a proxy rule for the stick's address alone, so its updates and other tabs never leave through the board and its SIM.
 - **Leaves nothing behind**: no system proxy changes; quitting ends the tunnel.
 - **Built with**: Swift and SwiftUI, no third-party dependencies.
 
@@ -120,7 +121,7 @@ That is two terminals, a host name to remember, a long browser command to find a
 - **Picks the route**: tries the LAN name and the Tailscale name and uses whichever answers.
 - **Holds the tunnel**: the same `ssh -D`, started and stopped with the window, with the exact command visible in the log.
 - **Proves the chain**: shows green only once the modem itself has answered through the tunnel.
-- **Opens the page**: in a built-in viewer or a browser picked each time, started with the proxy and its own profile.
+- **Opens the page**: in a built-in viewer or a browser picked each time, started with its own profile and a proxy rule for the modem's address alone.
 
 For another board or modem, change the targets and the modem's address in Settings; our box is only the default.
 
@@ -155,6 +156,7 @@ lte-usb-modem-remote-stick-view/
 │       ├── Tunnel.swift       the ssh process, readiness, failure reasons, retries, network changes, leftover cleanup
 │       ├── Route.swift        the port-22 probe for Auto, finding Tailscale and reading its status
 │       ├── Viewer.swift       the built-in viewer: a WebKit window that goes only through the tunnel
+│       ├── Browsers.swift     finding browsers, the proxy rule for the stick only, launching, cleanup
 │       ├── System.swift       port checks, lsof and ps lookups, the stick probe
 │       └── Model.swift        targets, settings, status lines
 └── assets/          mockups (HTML sources and rendered PNGs) and screenshots of the app, index in its README
@@ -168,7 +170,7 @@ lte-usb-modem-remote-stick-view/
 - [x] Step 2: tunnel core
 - [x] Step 3: Auto route choice and reconnect
 - [x] Step 4: built-in viewer
-- [ ] Step 5: external browsers
+- [x] Step 5: external browsers
 - [ ] Step 6: settings, Keychain, askpass
 - [ ] Step 7: build script, icon, this README filled in
 

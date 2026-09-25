@@ -12,6 +12,7 @@ The mockups of the app, each as an HTML source and the PNG rendered from it, and
 - `app-tailscale-missing.png`: a screenshot of the real app started with `--simulate tailscale-missing`.
 - `app-viewer.png`: the built-in viewer with the stick's page, taken with `--open-viewer` and scaled to 1600 pixels wide.
 - `app-viewer-waiting.png`: the viewer waiting for the tunnel, taken with `--simulate tailscale-missing --open-viewer`, same scale.
+- `app-chooser.png`: the main window with the chooser open, taken with `--show-chooser`; the popover is its own window, the one without a name.
 
 ## After editing a mockup
 
@@ -22,7 +23,7 @@ Run from this folder. Each render is stopped after 7 seconds, because headless C
 
 ```bash
 C="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-for spec in "mock-main-window 520" "mock-browser-chooser 360" "mock-settings 408"; do
+for spec in "mock-main-window 520" "mock-browser-chooser 400" "mock-settings 440"; do
   set -- ${=spec}
   "$C" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
     --user-data-dir=/tmp/lsv-mock-render --window-size=716,$2 \
