@@ -4,6 +4,10 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var tunnel: Tunnel
     @State private var logOpen = true
+    @State private var viewers = 0
+    @Environment(\.openWindow) private var openWindow
+    /// --open-viewer opens the built-in viewer right at launch, for checks from a terminal.
+    private let autoOpen = CommandLine.arguments.contains("--open-viewer")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -35,6 +39,12 @@ struct ContentView: View {
             StatusRow(name: "lte stick", line: tunnel.stick)
 
             HStack {
+                Menu("Open stick page\u{2026}") {
+                    Button("Built-in viewer (WebKit, in the app)") { openViewer() }
+                }
+                .menuStyle(.borderedButton)
+                .fixedSize()
+                .help("Asks where to open the stick's page each time")
                 if !tunnel.isActive {
                     Button("Reconnect") { tunnel.reconnect() }
                 }
@@ -70,8 +80,20 @@ struct ContentView: View {
         }
         .padding(18)
         .frame(width: 640)
-        .task { tunnel.start() }
+        .task {
+            tunnel.start()
+            if autoOpen { openViewer() }
+        }
+        // Closing this window quits the app, even while viewer windows are open.
+        .onDisappear { NSApp.terminate(nil) }
+
         .onChange(of: tunnel.choice) { tunnel.reconnect() }
+    }
+
+    private func openViewer() {
+        viewers += 1
+        tunnel.note("opening the stick page in the built-in viewer")
+        openWindow(id: "viewer", value: viewers)
     }
 
     private func sshLine(at now: Date) -> Line {

@@ -1,13 +1,13 @@
 # LTE Stick View specification
 
 > [!NOTE]
-> **Status**: route choice, reconnect and the Tailscale check are built (step 3 of 7): Auto probes the targets, a fifth line reports Tailscale and offers the fix when it is the reason the box cannot be reached, a lost link reconnects on its own, and a network change retries at once
+> **Status**: the built-in viewer is built (step 4 of 7): **Open stick page…** opens the stick's own page in a WebKit window whose traffic goes only through the tunnel, and it waits for the tunnel and reloads after a drop on its own; external browsers come in step 5
 >
-> **Verified**: `2026-09-25` from the office: Auto skipping the LAN name and picking the tailnet with the path read as *direct*; ssh killed mid-session and all green again within 4 s; the four Tailscale failures (missing, stopped, signed out, box not on the tailnet) by `--simulate`, each red with its cause and fix, and quiet when the LAN was chosen by hand; a taken port not retried; and from step 2, quit by `SIGTERM` and a crashed run's ssh ended on the next start
+> **Verified**: `2026-09-25` from the office: the stick's page loaded in the viewer through the tunnel, while this Mac cannot reach `192.168.8.1` directly; opened before the tunnel was up, it waited and said so; ssh killed with the page open, tunnel back 3 s later and the page reloaded 3 s after that; quit with the viewer open left no ssh and no WebKit process; and from step 3, Auto, the Tailscale line and its four simulated failures, reconnect with backoff
 >
-> **Open**: the LAN path, to be run at home; a real network change; the *relayed* path; a Mac that really has no Tailscale, and what the Tailscale CLI answers when its app is installed but has never been opened; Arc's flags and the Firefox launch
+> **Open**: the LAN path, to be run at home; a real network change; the *relayed* path; a Mac that really has no Tailscale; whether the bundled app of step 7 still loads plain `http` without an App Transport Security exception; Arc's flags and the Firefox launch
 >
-> **Next**: step 4, the built-in viewer (see the [roadmap](README.md#roadmap))
+> **Next**: step 5, external browsers (see the [roadmap](README.md#roadmap))
 
 ---
 
@@ -182,9 +182,31 @@ While connected, the stick check repeats every 30 seconds. It costs no SIM data:
 
 **Open stick page…** asks every time. It opens a chooser listing the built-in viewer and every usable browser found on the Mac. The one used last carries the label *last used*, but nothing is preselected and no default is stored.
 
+> [!NOTE]
+> Built so far: the chooser is a menu on the button, and it lists the built-in viewer only. The browsers join it in step 5.
+
 ### The built-in viewer
 
-A window inside the app, using WebKit with a data store whose proxy is set to the tunnel: `WKWebsiteDataStore.proxyConfigurations` with a SOCKSv5 `ProxyConfiguration` pointing at `127.0.0.1:1080`. This API exists since macOS 14, and the proxy applies to that one web view only. The store is non-persistent, so no cookies or cache outlive the window. Several viewer windows can be open at once, and closing them does not touch the tunnel.
+A window inside the app, using WebKit with a data store whose proxy is set to the tunnel: `WKWebsiteDataStore.proxyConfigurations` with a SOCKSv5 `ProxyConfiguration` pointing at `127.0.0.1:1080`. This API exists since macOS 14, and the proxy applies to that one web view only. Each window has its own non-persistent store, so no cookies or cache outlive it, and a login on the stick's page lasts as long as that window. Several viewer windows can be open at once, and closing them does not touch the tunnel.
+
+The window has back, forward and reload, the address in use, and on the right a dot with where the traffic goes: green *through the tunnel* followed by the route line's word, or yellow *waiting for the tunnel*.
+
+**The viewer follows the tunnel on its own.**
+
+1. Opened before the tunnel is up, it shows *Waiting for the tunnel* and loads the page the moment the **lte stick** line turns green.
+2. If a load fails, it says so with WebKit's reason and loads again when the stick next answers; reload works at any time.
+3. If the tunnel drops while the page is open, the page's own background requests break, so the viewer marks it stale and reloads it once the stick answers again.
+
+> [!IMPORTANT]
+> The page really does come through the tunnel: on `2026-09-25` the viewer loaded `http://192.168.8.1/#/`, the stick's home page with the operator and live throughput, while `curl http://192.168.8.1/` straight from the Mac was refused.
+
+> [!NOTE]
+> The stick's page is wider than about 1300 points and scrolls sideways in a narrower window. The viewer opens at 1320 by 860 points the first time; after that macOS remembers the size you leave it at.
+
+**Nothing on the page is touched by the app.** It only loads it. The page has live controls, *Disable Mobile Data* among them, that act on the modem in the field.
+
+> [!WARNING]
+> A plain `http` page in a WebKit view can be blocked by App Transport Security. The development binary has no Info.plist and loads the page fine; the bundled app of step 7 has one, and whether it then needs an exception for local networking is to be checked there.
 
 ### External browsers
 
@@ -248,13 +270,15 @@ Plain settings live in the app's user defaults (bundle identifier `work.dattasau
 
 ## Lifecycle
 
-Closing the main window quits the app, and quitting ends the tunnel: ssh gets `SIGTERM`, then `SIGKILL` after 2 seconds if it is still there, and the temporary Firefox profile is deleted. Browser windows opened through the tunnel stay open but stop loading.
+Closing the main window quits the app, also while viewer windows are open, and quitting ends the tunnel: ssh gets `SIGTERM`, then `SIGKILL` after 2 seconds if it is still there, and the temporary Firefox profile is deleted. Viewer windows close with the app, and their WebKit helper processes end with it. Browser windows opened through the tunnel stay open but stop loading.
 
 If the app ever dies without cleaning up, its ssh could be left running. To catch that, the app writes the ssh process ID to `~/Library/Application Support/LTE Stick View/ssh.pid`. On the next launch, if that process is still alive and is our ssh, it is ended before anything else starts.
 
 A plain `kill` sent to the app (`SIGTERM`) is turned into a normal quit, so ssh is stopped the same way. Only `kill -9` skips that path, which is what the process ID file is for. Both were checked on `2026-09-25`.
 
 The port is fixed rather than picked at random on each connect, so a browser started earlier keeps working after a reconnect.
+
+Before ssh starts, the app checks the port by binding to it with `SO_REUSEADDR`, the way ssh itself binds. Without that option the check reported a port as taken by nobody for about 30 seconds after a viewer session: the connections the page made through the proxy stay in `TIME_WAIT` on `127.0.0.1:1080` for that long after they close (seven to nine of them, seen on `2026-09-25`), and ssh binds regardless. A process that really listens on the port is still caught and named, tested with a plain listener and with another `ssh -D`, which the app leaves running.
 
 ---
 
@@ -281,7 +305,10 @@ The same binary has a headless check, `--self-test`, which connects, waits for t
 .build/debug/LTEStickView --self-test auto --drop
 .build/debug/LTEStickView --self-test auto --simulate tailscale-missing
 .build/debug/LTEStickView --simulate tailscale-missing
+.build/debug/LTEStickView --open-viewer --log-stdout
 ```
+
+Two more switches help check the window from a terminal: `--open-viewer` opens the built-in viewer right at launch, and `--log-stdout` prints every log line to the terminal as well.
 
 This is what `--self-test auto --drop` printed from the office on `2026-09-25`:
 
@@ -326,13 +353,13 @@ lte stick    hollow  not checked
 > From outside the home network the LAN target fails, as it should. `--self-test lan` prints `red no route orangepizero.lan: name not found`, schedules its first retry, and exits with `1`.
 
 > [!NOTE]
-> Running from the debug build on `2026-09-25`, with the Tailscale reading every 30 seconds, the app used about 86 MB of memory and 0.44 s of CPU in its first 45 seconds including startup, and its ssh about 3 MB and no measurable CPU.
+> Running from the debug build on `2026-09-25`, with the Tailscale reading every 30 seconds, the app used about 86 MB of memory and 0.44 s of CPU in its first 45 seconds including startup, and its ssh about 3 MB and no measurable CPU. With a viewer window open the app was at about 122 MB, and WebKit ran three helper processes of about 180 MB together, all of them gone after quitting.
 
 ---
 
 ## Screenshots
 
-The real window, captured on `2026-09-25` from the office. The **Open stick page…** button arrives in steps 4 and 5.
+The real windows, captured on `2026-09-25` from the office.
 
 ![The app connected over the tailnet: all five lines green, Tailscale direct](assets/app-main-window.png)
 
@@ -341,6 +368,14 @@ The real window, captured on `2026-09-25` from the office. The **Open stick page
 ![The app with --simulate tailscale-missing: route and tailscale red, Get Tailscale button, ssh waiting to retry](assets/app-tailscale-missing.png)
 
 *The same Mac with `--simulate tailscale-missing`: the tailscale line names the cause and offers the fix, and ssh waits for the next attempt.*
+
+![The built-in viewer showing the stick's home page, 4G o2, through the tunnel](assets/app-viewer.png)
+
+*The built-in viewer with the stick's own page, through the tunnel.*
+
+![The built-in viewer waiting for the tunnel](assets/app-viewer-waiting.png)
+
+*The viewer opened while the tunnel could not come up: it waits, and loads the page once the stick answers.*
 
 ---
 

@@ -103,7 +103,7 @@ final class Tunnel {
             guard gen == self.generation else { return }
             if !free {
                 let holder = await Task.detached { System.listenerName(port) }.value
-                let who = holder.map { "by \($0)" } ?? ""
+                let who = holder.map { "by \($0)" } ?? "by a process lsof could not name"
                 self.socks = Line(light: .red, word: "port in use", detail: who)
                 self.ssh = Line(light: .red, word: "failed", detail: "port in use")
                 self.route = Line(light: .hollow, word: "not tried")
@@ -519,9 +519,13 @@ final class Tunnel {
         start()
     }
 
+    /// With --log-stdout every log line is also printed, for checks from a terminal.
+    static let echo = CommandLine.arguments.contains("--log-stdout")
+
     func note(_ s: String) {
         let stamp = Date().formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
         log.append("\(stamp) \(s)")
+        if Self.echo { print("\(stamp) \(s)"); fflush(stdout) }
         if log.count > 200 { log.removeFirst(log.count - 200) }
     }
 }

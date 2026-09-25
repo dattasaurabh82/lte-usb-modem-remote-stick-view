@@ -24,11 +24,15 @@ enum System {
         return (p.terminationStatus, String(decoding: data, as: UTF8.self))
     }
 
-    /// True when nothing holds 127.0.0.1:port, checked by binding to it and letting go.
+    /// True when nothing listens on 127.0.0.1:port, checked by binding to it and letting go.
+    /// SO_REUSEADDR as ssh uses it: closed connections still in TIME_WAIT (left for about 30 s
+    /// after a browser used the proxy) must not count as taken, a listener still must.
     static func portIsFree(_ port: UInt16) -> Bool {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
         var addr = loopback(port)
         let rc = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {

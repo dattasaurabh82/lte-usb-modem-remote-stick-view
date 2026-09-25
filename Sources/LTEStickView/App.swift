@@ -31,6 +31,12 @@ struct LTEStickViewApp: App {
             ContentView(tunnel: Tunnel.shared)
         }
         .windowResizability(.contentSize)
+
+        // One window per "Open stick page" in the built-in viewer; the value only keeps them apart.
+        WindowGroup("Stick page", id: "viewer", for: Int.self) { _ in
+            ViewerWindow(tunnel: Tunnel.shared)
+        }
+        .defaultSize(width: 1320, height: 860)
     }
 }
 

@@ -10,6 +10,8 @@ The mockups of the app, each as an HTML source and the PNG rendered from it, and
 - `mock-settings.html`, `mock-settings.png`: the settings window.
 - `app-main-window.png`: a screenshot of the real app, connected over the tailnet.
 - `app-tailscale-missing.png`: a screenshot of the real app started with `--simulate tailscale-missing`.
+- `app-viewer.png`: the built-in viewer with the stick's page, taken with `--open-viewer` and scaled to 1600 pixels wide.
+- `app-viewer-waiting.png`: the viewer waiting for the tunnel, taken with `--simulate tailscale-missing --open-viewer`, same scale.
 
 ## After editing a mockup
 
@@ -35,7 +37,7 @@ rm -rf /tmp/lsv-mock-render
 
 ## Retaking a screenshot of the app
 
-The `app-*.png` files are captures of the running window, not renders. Retake them when the window changes. From the repo root, after `swift build`, this starts the app, finds its window and captures only that window, then quits the app. Add `--simulate tailscale-missing` after the binary for the second screenshot.
+The `app-*.png` files are captures of the running window, not renders. Retake them when the window changes. From the repo root, after `swift build`, this starts the app, finds its window and captures only that window, then quits the app. Add `--simulate tailscale-missing` after the binary for the second screenshot. For the viewer, add `--open-viewer`, look the window up by its name `Stick page` instead of taking the first one, and scale the result with `sips -Z 1600`.
 
 ```bash
 .build/debug/LTEStickView >/dev/null 2>&1 &
