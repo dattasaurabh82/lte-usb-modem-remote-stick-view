@@ -1,13 +1,13 @@
 # LTE Stick View specification
 
 > [!NOTE]
-> **Status**: spec written and mockups rendered, no app code yet
+> **Status**: the tunnel core is built (step 2 of 7): the window connects, shows the four lines, and cleans up on quit; the route is picked by hand until Auto arrives in step 3
 >
-> **Verified**: `2026-09-25`, the Mac it is built for (see [Build and install](#build-and-install)), the stick's name and its route on the box; the manual SOCKS route this app wraps was checked on `2026-09-23` in the server repo
+> **Verified**: `2026-09-25` from the office over the tailnet: all four lines green in under 2 s, the LAN name failing as *name not found*, a taken port reported with its holder, quit by `SIGTERM` ending ssh, and a crashed run's ssh ended on the next start (see [Building and checking from the command line](#building-and-checking-from-the-command-line))
 >
-> **Open**: whether Arc honours `--proxy-server` and `--user-data-dir`; the Firefox launch is written from documentation and not yet run
+> **Open**: the LAN path, to be run at home; whether Arc honours `--proxy-server` and `--user-data-dir`; the Firefox launch, written from documentation and not yet run
 >
-> **Next**: step 2, the tunnel core (see the [roadmap](README.md#roadmap))
+> **Next**: step 3, Auto route choice and reconnect (see the [roadmap](README.md#roadmap))
 
 ---
 
@@ -30,6 +30,7 @@
   - [Settings](#settings)
   - [Lifecycle](#lifecycle)
   - [Build and install](#build-and-install)
+    - [Building and checking from the command line](#building-and-checking-from-the-command-line)
   - [Mockups](#mockups)
   - [Out of scope](#out-of-scope)
 
@@ -103,7 +104,10 @@ For the password case, ssh is started with `SSH_ASKPASS` pointing at the app's o
 
 ## Choosing the route
 
-The route switch has three positions. **LAN** and **Tailscale** use that target and nothing else. **Auto**, the default, decides on every connect.
+The app connects as soon as its window opens, and changing the route switch reconnects. The switch has three positions. **LAN** and **Tailscale** use that target and nothing else. **Auto**, the default, decides on every connect.
+
+> [!NOTE]
+> Built so far: the switch lists the targets by name (*Home LAN*, *Tailscale*) and uses the one picked, remembered between launches. Auto and the Tailscale details below arrive in step 3.
 
 In Auto the app probes every target in parallel: it resolves the name and opens a plain TCP connection to port 22, giving up after about 1.5 seconds. Targets are tried in the order set in Settings, so the first one that answers wins. With the defaults that means the LAN at home, because it does not depend on Tailscale being up, and the tailnet anywhere else.
 
@@ -174,10 +178,12 @@ Each strategy carries a tested flag. A browser whose launch has not been run on 
 
 The main window has four lines, each with its own dot. Green means working, yellow means look, red means broken, and a hollow grey dot means not present or not tried yet.
 
-- **route**: which target is in use and why. Green *LAN* or *Tailscale, direct*; yellow *Tailscale, relayed* (works, slower); red *no route* when no target answered on port 22; grey *not tried* before the first connect.
-- **ssh session**: grey *down*; yellow *connecting*; green *up* with the time since connect and the target; red *failed* with the reason, one of *sign-in refused*, *host key unknown*, *host key changed*, *port in use* or *timed out*.
+- **route**: which target is in use. Yellow *trying* while ssh connects; green with the target's name (*Home LAN*, *Tailscale*) and its host; red *no route* when the host could not be reached (*name not found*, *timed out* or *refused*); grey *not tried* before the first connect. With Auto (step 3) the green word also tells *direct* or *relayed*, and a relayed path turns yellow because it works but is slower.
+- **ssh session**: grey *down*; yellow *connecting*; green *up* with the time since connect, as in *up 00:12:41*, and the target; red *failed* with the reason, one of *sign-in refused*, *host key unknown*, *host key changed*, *port in use*, *name not found*, *timed out*, *refused*, or *exited* for anything else, in which case the log holds ssh's own words.
 - **socks proxy**: grey *off*; green with the address, `127.0.0.1:1080`; red *port in use* with the name of the process holding it.
 - **lte stick**: grey *not checked*; yellow *checking*; green *reachable* with the model and address; red *no answer* when the box is reachable but the stick is not (unplugged, or `lte0` down on the box).
+
+When no session is running, a **Reconnect** button appears next to **Quit**. Under **Command and log** the window shows the exact ssh command, each step with its time, and ssh's own error lines prefixed `ssh:`.
 
 ---
 
@@ -199,6 +205,8 @@ Closing the main window quits the app, and quitting ends the tunnel: ssh gets `S
 
 If the app ever dies without cleaning up, its ssh could be left running. To catch that, the app writes the ssh process ID to `~/Library/Application Support/LTE Stick View/ssh.pid`. On the next launch, if that process is still alive and is our ssh, it is ended before anything else starts.
 
+A plain `kill` sent to the app (`SIGTERM`) is turned into a normal quit, so ssh is stopped the same way. Only `kill -9` skips that path, which is what the process ID file is for. Both were checked on `2026-09-25`.
+
 The port is fixed rather than picked at random on each connect, so a browser started earlier keeps working after a reconnect.
 
 ---
@@ -209,6 +217,40 @@ A native SwiftUI app with no third-party dependencies, built as a Swift package,
 
 > [!IMPORTANT]
 > The Mac it is built and tested on, as read off the machine on `2026-09-25`: macOS 27.0 on Apple silicon, Xcode with Swift 6.4, `OpenSSH_10.3p1` at `/usr/bin/ssh`, Tailscale 1.102.4 (the standalone app, CLI launcher at `/usr/local/bin/tailscale`). Apps registered for `http`: Google Chrome, Safari, Firefox, Arc, MKPlayer and iTerm.
+
+### Building and checking from the command line
+
+Until the build script exists (step 7), the app is built and started from the repo folder:
+
+```bash
+swift build
+.build/debug/LTEStickView
+```
+
+The same binary has a headless check, `--self-test`, which connects, waits for the chain, prints the four lines and the log, disconnects, and exits. The optional argument picks the target by part of its name or by its exact `user@host`, and the choice is remembered like the route switch. The exit status is `0` when all four lines are green, `1` when any is not, and `2` when no target matches the argument.
+
+```bash
+.build/debug/LTEStickView --self-test tailscale
+```
+
+This is what it printed from the office on `2026-09-25`:
+
+```text
+route        green   Tailscale  orangepizero
+ssh session  green   up  root@orangepizero
+socks proxy  green   127.0.0.1:1080
+lte stick    green   reachable  E3372-325 at 192.168.8.1
+
+12:55:12 /usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o BatchMode=yes root@orangepizero
+12:55:13 socks up on 127.0.0.1:1080
+12:55:13 stick answered device/information (E3372-325)
+```
+
+> [!WARNING]
+> From outside the home network the LAN target fails, as it should. The check prints `red no route orangepizero.lan: name not found` and exits with `1`.
+
+> [!NOTE]
+> Running from the debug build on `2026-09-25`, the app used about 93 MB of memory and 0.2 % CPU, and its ssh about 5 MB and no measurable CPU.
 
 ---
 

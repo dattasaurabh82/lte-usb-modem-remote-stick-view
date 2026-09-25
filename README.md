@@ -7,7 +7,7 @@
 ![Platform: macOS 14 and later](https://img.shields.io/badge/platform-macOS%2014%2B-1e40af)
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-1e40af)
-![Status: spec, no code yet](https://img.shields.io/badge/status-spec%2C%20no%20code%20yet-4a4946)
+![Status: step 2 of 7, tunnel core](https://img.shields.io/badge/status-step%202%20of%207%2C%20tunnel%20core-4a4946)
 ![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-4a4946)
 
 <img src="assets/mock-main-window.png" alt="LTE Stick View main window mockup: route switch, four status lines, Open stick page and Quit" width="720">
@@ -127,6 +127,7 @@ For another board or modem, change the targets and the modem's address in Settin
 
 - **To understand the design**: [SPEC.md](SPEC.md), with the chain diagram, every ssh flag explained, and the status words.
 - **To see where it stands**: the [roadmap](#roadmap) below, and the note box at the top of [SPEC.md](SPEC.md).
+- **To build and try it**: [Building and checking from the command line](SPEC.md#building-and-checking-from-the-command-line) in SPEC, including the headless `--self-test`.
 - **To change a mockup**: [assets/README.md](assets/README.md).
 - **For the manual commands this app replaces**: the server repo's [runbook 05, Read the stick](https://github.com/dattasaurabh82/orangepizero-solar-server/blob/main/runbooks/05-network-setup.md#read-the-stick).
 
@@ -139,7 +140,15 @@ lte-usb-modem-remote-stick-view/
 ├── README.md        this page
 ├── SPEC.md          the design: tunnel, sign-in, routes, viewers, status lines
 ├── LICENSE          GNU LGPL 2.1
+├── Package.swift    the Swift package: one app target, macOS 14 and later
 ├── .gitignore
+├── Sources/
+│   └── LTEStickView/
+│       ├── App.swift          app entry, quit handling, the --self-test mode
+│       ├── ContentView.swift  the main window: route switch, four lines, log
+│       ├── Tunnel.swift       the ssh process, readiness, failure reasons, leftover cleanup
+│       ├── System.swift       port checks, lsof and ps lookups, the stick probe
+│       └── Model.swift        targets, settings, status lines
 └── assets/          mockups (HTML sources and rendered PNGs), index in its README
 ```
 
@@ -148,7 +157,7 @@ lte-usb-modem-remote-stick-view/
 ## Roadmap
 
 - [x] Step 1: repo, spec, context, log, mockups
-- [ ] Step 2: tunnel core
+- [x] Step 2: tunnel core
 - [ ] Step 3: Auto route choice and reconnect
 - [ ] Step 4: built-in viewer
 - [ ] Step 5: external browsers
