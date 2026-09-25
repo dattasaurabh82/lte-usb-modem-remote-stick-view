@@ -33,14 +33,14 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
 - [lte-usb-modem-remote-stick-view](#lte-usb-modem-remote-stick-view)
   - [Contents](#contents)
   - [At a glance](#at-a-glance)
+  - [Why this exists](#why-this-exists)
+    - [The chore](#the-chore)
+    - [What the app does instead](#what-the-app-does-instead)
   - [What it looks like](#what-it-looks-like)
   - [What was considered](#what-was-considered)
     - [Technical](#technical)
     - [Experience](#experience)
     - [Edge cases](#edge-cases)
-  - [Why this exists](#why-this-exists)
-    - [The chore](#the-chore)
-    - [What the app does instead](#what-the-app-does-instead)
   - [Install](#install)
   - [Use](#use)
   - [Where to start](#where-to-start)
@@ -64,125 +64,6 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
 
 ---
 
-## What it looks like
-
-Screenshots of the installed app on `2026-09-25`, taken from the office over Tailscale. The failure states were produced on purpose, with the app's `--simulate` switch or a port held by another program.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<img src="assets/app-main-window.png" alt="Main window, all five lines green" width="100%"><br>
-<b>Connected.</b> Auto tried both targets, found the LAN name unknown from here, and used Tailscale. Five lines, each with its own dot and words; the exact ssh command and every step in the log.
-</td>
-<td width="50%" valign="top">
-<img src="assets/app-chooser.png" alt="The chooser open under Open stick page" width="100%"><br>
-<b>Asks where, every time.</b> The built-in viewer and the browsers found on this Mac. Tested ones green, Safari and Arc greyed with the reason; the last one used is labelled, never preselected.
-</td>
-</tr>
-<tr>
-<td valign="top">
-<img src="assets/app-viewer.png" alt="Built-in viewer showing the modem's page" width="100%"><br>
-<b>Built-in viewer.</b> A WebKit window whose traffic goes only through the tunnel, with where it goes on the right. It forgets everything when closed.
-</td>
-<td valign="top">
-<img src="assets/app-chrome.png" alt="Google Chrome showing the modem's page" width="100%"><br>
-<b>Or a browser.</b> A separate Chrome instance with a profile of its own, and a proxy rule for the modem's address only. The everyday Chrome stays as it is.
-</td>
-</tr>
-<tr>
-<td valign="top">
-<img src="assets/app-tailscale-missing.png" alt="Tailscale not installed, red, with Get Tailscale" width="100%"><br>
-<b>Says why, and offers the fix.</b> Away from home without Tailscale: the tailscale line turns red, names the cause and puts <i>Get Tailscale</i> right there. Retries keep counting down.
-</td>
-<td valign="top">
-<img src="assets/app-tailscale-stopped.png" alt="Tailscale stopped, red, with Open Tailscale" width="100%"><br>
-<b>Stopped or signed out.</b> The same line with <i>Open Tailscale</i>; the app reads Tailscale again after opening it and connects once it is up.
-</td>
-</tr>
-<tr>
-<td valign="top">
-<img src="assets/app-home-lan-quiet.png" alt="Home LAN chosen by hand, Tailscale not installed but only hollow" width="100%"><br>
-<b>Quiet when it does not matter.</b> The home network chosen by hand: a missing Tailscale is not the problem here, so its line stays hollow and says it is needed only away from home.
-</td>
-<td valign="top">
-<img src="assets/app-reconnecting.png" alt="ssh waiting to retry after the link dropped" width="100%"><br>
-<b>Comes back by itself.</b> ssh killed mid-session: the app waits 2, 4, 8, 16, then 30 seconds between attempts, chooses the route again each time, and was green again 4 seconds after this.
-</td>
-</tr>
-<tr>
-<td valign="top">
-<img src="assets/app-port-in-use.png" alt="Port 1080 in use, holder named" width="100%"><br>
-<b>Names what is in the way.</b> Another program holds port 1080: the app names it, does not retry, and leaves it alone. Tailscale is still read and shown.
-</td>
-<td valign="top">
-<img src="assets/app-viewer-waiting.png" alt="Viewer waiting for the tunnel" width="100%"><br>
-<b>Opened early, waits.</b> The viewer opened before the tunnel was up says so, and loads the page the moment the modem answers; after a drop it reloads by itself.
-</td>
-</tr>
-<tr>
-<td valign="top">
-<img src="assets/app-settings.png" alt="Settings window" width="100%"><br>
-<b>Settings.</b> Targets in the order Auto tries them, each with how it signs in; the modem's address with <i>Detect from box</i>; the SOCKS port; the browsers found.
-</td>
-<td valign="top">
-<img src="assets/app-settings-password.png" alt="Settings with a target in password mode" width="100%"><br>
-<b>Passwords stay in the Keychain.</b> A target in password mode gets a field with <i>Save</i> and <i>Forget</i>; ssh gets the password through the app's own one-time helper.
-</td>
-</tr>
-</table>
-
----
-
-## What was considered
-
-Each row links to the SPEC section that explains it in full.
-
-### Technical
-
-| What | How the app handles it |
-| --- | --- |
-| Reusing what already works | It runs the Mac's own `/usr/bin/ssh`, so `~/.ssh/config`, `known_hosts`, keys and Tailscale SSH apply unchanged. [The tunnel](SPEC.md#the-tunnel) |
-| Green means the whole chain | A line turns green only once the modem itself has answered through the tunnel, not when ssh starts. [When a line turns green](SPEC.md#when-a-line-turns-green) |
-| The modem's Host check | A SOCKS proxy, not a port forward, so every request carries the modem's real address. [Why this exists](SPEC.md#why-this-exists) |
-| Only the modem through the tunnel | Browsers get a proxy auto-config rule for the modem's address alone. With everything proxied, a fresh Firefox sent its first-run downloads out through the board, and our board's IPv6 goes over the SIM. [External browsers](SPEC.md#external-browsers) |
-| Passwords | Kept only in the Keychain; handed to ssh by the app's own askpass helper over a private one-time socket, never on disk, the command line or in a lasting variable. [Signing in](SPEC.md#signing-in) |
-| Nothing left behind | Quitting stops ssh, also on a plain `kill`; after a crash, the next start ends the leftover ssh it recorded. No system proxy is ever changed. [Lifecycle](SPEC.md#lifecycle) |
-| A port that only looks taken | The free-port check binds the way ssh does, so connections in `TIME_WAIT` after a viewer session are not mistaken for a listener. [Lifecycle](SPEC.md#lifecycle) |
-| Values from the system | Browsers, the Tailscale app and CLI, the modem's address (*Detect from box*) and the Tailscale path are read, not hardcoded. [Settings](SPEC.md#settings) |
-| Cost | Zero when not running; one idle ssh and a small window when it is. [Build and install](SPEC.md#build-and-install) |
-
-### Experience
-
-| What | How the app handles it |
-| --- | --- |
-| One window, one lifetime | Opening the app connects; closing the window quits and ends the tunnel. Nothing lives on in the menu bar. [Lifecycle](SPEC.md#lifecycle) |
-| Every fact on its own line | Five lines, each with a dot (green right, yellow look, red broken, hollow not present) and state words coloured by meaning. [Status lines](SPEC.md#status-lines) |
-| Say why, then offer the fix | Red lines name the reason; the tailscale line carries *Get Tailscale* or *Open Tailscale* when that is the fix. [Without Tailscale](SPEC.md#without-tailscale) |
-| Quiet unless it matters | Tailscale is optional; its line turns red only when it is the reason the board cannot be reached. [Without Tailscale](SPEC.md#without-tailscale) |
-| Ask, do not assume | The viewer is chosen each time; the last one is labelled, not preselected. [Opening the stick page](SPEC.md#opening-the-stick-page) |
-| Nothing to remember | The route is picked by what answers; the command, every probe and every failure are in the log. [Choosing the route](SPEC.md#choosing-the-route) |
-| Hands off the modem | The app only loads the modem's page; its live controls, such as *Disable Mobile Data*, are never touched. [The built-in viewer](SPEC.md#the-built-in-viewer) |
-
-### Edge cases
-
-| Situation | What the app does |
-| --- | --- |
-| Away from home | Auto skips the LAN name and uses the tailnet; the route line says which names did not answer. |
-| The link drops | Waits 2, 4, 8, 16, then 30 seconds between attempts, choosing the route again each time; a network change tries at once. [When the link drops](SPEC.md#when-the-link-drops) |
-| No Tailscale, stopped, signed out, or the board not on this tailnet | Each named on the tailscale line, red only when it blocks, with the fix where there is one. [Without Tailscale](SPEC.md#without-tailscale) |
-| Sign-in refused, host key unknown or changed | Red with that reason and no retry, because waiting cannot fix it. [Signing in](SPEC.md#signing-in) |
-| Port already taken | The holder named, no retry, the other program left alone. [Lifecycle](SPEC.md#lifecycle) |
-| Viewer opened before the tunnel | Waits, and loads the page when the modem answers. [The built-in viewer](SPEC.md#the-built-in-viewer) |
-| Tunnel drops with the page open | The viewer reloads once the modem answers again. [The built-in viewer](SPEC.md#the-built-in-viewer) |
-| A browser picked before the tunnel | It opens as soon as the modem answers. [Opening the stick page](SPEC.md#opening-the-stick-page) |
-| Browsers that cannot carry the rule | Safari (system proxy only) and Arc (ignores launch options) listed, greyed, with the reason. [External browsers](SPEC.md#external-browsers) |
-| The everyday browser is open | A separate instance with its own profile; the running one is never touched. [External browsers](SPEC.md#external-browsers) |
-| Firefox restarts itself | Its throwaway profile is removed at quit, or at the next launch if Firefox was still open. [External browsers](SPEC.md#external-browsers) |
-| The app crashed | The next start ends the ssh it left behind. [Lifecycle](SPEC.md#lifecycle) |
-| A password target without a password | Red *no password saved*, pointing to Settings. [Signing in](SPEC.md#signing-in) |
-
----
-
 ## Why this exists
 
 A USB LTE modem in router mode shows up on the board as a network card with its own little subnet, and the modem sits at the gateway address of that subnet with a web page for the SIM, the signal, the APN and the data counters. Only the board can reach that address. Your laptop cannot, even when it can SSH into the board.
@@ -193,10 +74,15 @@ What works is a **SOCKS proxy** through the board: `ssh -D` opens a local port, 
 
 ### The chore
 
-In general, with `<user>@<board>` the board's SSH login, `<modem>` the modem's address on the board's side (the gateway of the modem's network, often `192.168.8.1` for Huawei HiLink sticks), and `1080` any free local port:
+By hand it takes two terminals: an `ssh -D` tunnel in one and a browser started to use it in the other, because a plain port forward does not work. In general, with `<user>@<board>` the board's SSH login, `<modem>` the modem's address on the board's side (the gateway of the modem's network, often `192.168.8.1` for Huawei HiLink sticks), and `1080` any free local port:
 
 > [!IMPORTANT]
 > In our case `<user>@<board>` is `root@orangepizero.lan` at home and `root@orangepizero` over Tailscale anywhere else, and `<modem>` is `192.168.8.1`, a Huawei E3372h-320 in HiLink mode. The outputs below were captured on `2026-09-25` over Tailscale. Our board's side is written up in [runbook 05, Read the stick](https://github.com/dattasaurabh82/orangepizero-solar-server/blob/main/runbooks/05-network-setup.md#read-the-stick).
+
+<details>
+<summary>The commands, and what they return in our case</summary>
+
+<br>
 
 **What does not work: a plain port forward.**
 
@@ -229,8 +115,7 @@ ssh -D 1080 <user>@<board-tailnet-name>     # anywhere else, for us root@orangep
 open -na "Google Chrome" --args --proxy-server="socks5://127.0.0.1:1080" --user-data-dir=/tmp/stick-browser http://<modem>/
 ```
 
-> [!WARNING]
-> This sends everything that browser does through the board, not only the modem's page. On a board whose internet is a SIM, that costs data; the app uses a proxy rule for the modem's address alone instead (see [External browsers](SPEC.md#external-browsers)).
+**Careful:** This sends everything that browser does through the board, not only the modem's page. On a board whose internet is a SIM, that costs data; the app uses a proxy rule for the modem's address alone instead (see [External browsers](SPEC.md#external-browsers)).
 
 3. Or check from the command line through the same proxy:
 
@@ -248,6 +133,8 @@ Content-Length: 3106
 
 4. When done, close the browser and end the SSH session.
 
+</details>
+
 That is two terminals, a host name to remember, a long browser command to find again, and a session that is easy to leave running.
 
 *The app exists so that none of this has to be remembered.*
@@ -262,6 +149,176 @@ That is two terminals, a host name to remember, a long browser command to find a
 For another board or modem, change the targets and the modem's address in Settings; our box is only the default.
 
 **Everything else is in [SPEC.md](SPEC.md).**
+
+---
+
+## What it looks like
+
+Screenshots of the installed app on `2026-09-25`, taken from the office over Tailscale. The two below are what you see most of the time; the rest open on a click. The failure states were produced on purpose, with the app's `--simulate` switch or a port held by another program.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/app-main-window.png" alt="Main window, all five lines green" width="100%"><br>
+<b>Connected.</b> Auto tried both targets, found the LAN name unknown from here, and used Tailscale. Five lines, each with its own dot and words; the exact ssh command and every step in the log.
+</td>
+<td width="50%" valign="top">
+<img src="assets/app-chooser.png" alt="The chooser open under Open stick page" width="100%"><br>
+<b>Asks where, every time.</b> The built-in viewer and the browsers found on this Mac. Tested ones green, Safari and Arc greyed with the reason; the last one used is labelled, never preselected.
+</td>
+</tr>
+</table>
+
+<details>
+<summary><b>Opening the page</b>: the built-in viewer, and a browser (2 screenshots)</summary>
+
+<br>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/app-viewer.png" alt="Built-in viewer showing the modem's page" width="100%"><br>
+<b>Built-in viewer.</b> A WebKit window whose traffic goes only through the tunnel, with where it goes on the right. It forgets everything when closed.
+</td>
+<td width="50%" valign="top">
+<img src="assets/app-chrome.png" alt="Google Chrome showing the modem's page" width="100%"><br>
+<b>Or a browser.</b> A separate Chrome instance with a profile of its own, and a proxy rule for the modem's address only. The everyday Chrome stays as it is.
+</td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><b>When something is not right</b>: Tailscale missing or stopped, the quiet case, a dropped link, a taken port, the viewer waiting (6 screenshots)</summary>
+
+<br>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/app-tailscale-missing.png" alt="Tailscale not installed, red, with Get Tailscale" width="100%"><br>
+<b>Says why, and offers the fix.</b> Away from home without Tailscale: the tailscale line turns red, names the cause and puts <i>Get Tailscale</i> right there. Retries keep counting down.
+</td>
+<td width="50%" valign="top">
+<img src="assets/app-tailscale-stopped.png" alt="Tailscale stopped, red, with Open Tailscale" width="100%"><br>
+<b>Stopped or signed out.</b> The same line with <i>Open Tailscale</i>; the app reads Tailscale again after opening it and connects once it is up.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/app-home-lan-quiet.png" alt="Home LAN chosen by hand, Tailscale not installed but only hollow" width="100%"><br>
+<b>Quiet when it does not matter.</b> The home network chosen by hand: a missing Tailscale is not the problem here, so its line stays hollow and says it is needed only away from home.
+</td>
+<td width="50%" valign="top">
+<img src="assets/app-reconnecting.png" alt="ssh waiting to retry after the link dropped" width="100%"><br>
+<b>Comes back by itself.</b> ssh killed mid-session: the app waits 2, 4, 8, 16, then 30 seconds between attempts, chooses the route again each time, and was green again 4 seconds after this.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/app-port-in-use.png" alt="Port 1080 in use, holder named" width="100%"><br>
+<b>Names what is in the way.</b> Another program holds port 1080: the app names it, does not retry, and leaves it alone. Tailscale is still read and shown.
+</td>
+<td width="50%" valign="top">
+<img src="assets/app-viewer-waiting.png" alt="Viewer waiting for the tunnel" width="100%"><br>
+<b>Opened early, waits.</b> The viewer opened before the tunnel was up says so, and loads the page the moment the modem answers; after a drop it reloads by itself.
+</td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><b>Settings</b>: targets, modem address and port, and a target with a password (2 screenshots)</summary>
+
+<br>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/app-settings.png" alt="Settings window" width="100%"><br>
+<b>Settings.</b> Targets in the order Auto tries them, each with how it signs in; the modem's address with <i>Detect from box</i>; the SOCKS port; the browsers found.
+</td>
+<td width="50%" valign="top">
+<img src="assets/app-settings-password.png" alt="Settings with a target in password mode" width="100%"><br>
+<b>Passwords stay in the Keychain.</b> A target in password mode gets a field with <i>Save</i> and <i>Forget</i>; ssh gets the password through the app's own one-time helper.
+</td>
+</tr>
+</table>
+
+</details>
+
+---
+
+## What was considered
+
+Three short lists, closed by default: what was decided on the technical side, on the experience side, and which edge cases are covered. Each row links to the SPEC section that explains it in full.
+
+### Technical
+
+<details>
+<summary>Nine technical decisions, and how each is handled</summary>
+
+<br>
+
+| What | How the app handles it |
+| --- | --- |
+| Reusing what already works | It runs the Mac's own `/usr/bin/ssh`, so `~/.ssh/config`, `known_hosts`, keys and Tailscale SSH apply unchanged. [The tunnel](SPEC.md#the-tunnel) |
+| Green means the whole chain | A line turns green only once the modem itself has answered through the tunnel, not when ssh starts. [When a line turns green](SPEC.md#when-a-line-turns-green) |
+| The modem's Host check | A SOCKS proxy, not a port forward, so every request carries the modem's real address. [Why this exists](SPEC.md#why-this-exists) |
+| Only the modem through the tunnel | Browsers get a proxy auto-config rule for the modem's address alone. With everything proxied, a fresh Firefox sent its first-run downloads out through the board, and our board's IPv6 goes over the SIM. [External browsers](SPEC.md#external-browsers) |
+| Passwords | Kept only in the Keychain; handed to ssh by the app's own askpass helper over a private one-time socket, never on disk, the command line or in a lasting variable. [Signing in](SPEC.md#signing-in) |
+| Nothing left behind | Quitting stops ssh, also on a plain `kill`; after a crash, the next start ends the leftover ssh it recorded. No system proxy is ever changed. [Lifecycle](SPEC.md#lifecycle) |
+| A port that only looks taken | The free-port check binds the way ssh does, so connections in `TIME_WAIT` after a viewer session are not mistaken for a listener. [Lifecycle](SPEC.md#lifecycle) |
+| Values from the system | Browsers, the Tailscale app and CLI, the modem's address (*Detect from box*) and the Tailscale path are read, not hardcoded. [Settings](SPEC.md#settings) |
+| Cost | Zero when not running; one idle ssh and a small window when it is. [Build and install](SPEC.md#build-and-install) |
+
+</details>
+
+### Experience
+
+<details>
+<summary>Seven choices about how it feels to use</summary>
+
+<br>
+
+| What | How the app handles it |
+| --- | --- |
+| One window, one lifetime | Opening the app connects; closing the window quits and ends the tunnel. Nothing lives on in the menu bar. [Lifecycle](SPEC.md#lifecycle) |
+| Every fact on its own line | Five lines, each with a dot (green right, yellow look, red broken, hollow not present) and state words coloured by meaning. [Status lines](SPEC.md#status-lines) |
+| Say why, then offer the fix | Red lines name the reason; the tailscale line carries *Get Tailscale* or *Open Tailscale* when that is the fix. [Without Tailscale](SPEC.md#without-tailscale) |
+| Quiet unless it matters | Tailscale is optional; its line turns red only when it is the reason the board cannot be reached. [Without Tailscale](SPEC.md#without-tailscale) |
+| Ask, do not assume | The viewer is chosen each time; the last one is labelled, not preselected. [Opening the stick page](SPEC.md#opening-the-stick-page) |
+| Nothing to remember | The route is picked by what answers; the command, every probe and every failure are in the log. [Choosing the route](SPEC.md#choosing-the-route) |
+| Hands off the modem | The app only loads the modem's page; its live controls, such as *Disable Mobile Data*, are never touched. [The built-in viewer](SPEC.md#the-built-in-viewer) |
+
+</details>
+
+### Edge cases
+
+<details>
+<summary>Thirteen situations, and what the app does in each</summary>
+
+<br>
+
+| Situation | What the app does |
+| --- | --- |
+| Away from home | Auto skips the LAN name and uses the tailnet; the route line says which names did not answer. |
+| The link drops | Waits 2, 4, 8, 16, then 30 seconds between attempts, choosing the route again each time; a network change tries at once. [When the link drops](SPEC.md#when-the-link-drops) |
+| No Tailscale, stopped, signed out, or the board not on this tailnet | Each named on the tailscale line, red only when it blocks, with the fix where there is one. [Without Tailscale](SPEC.md#without-tailscale) |
+| Sign-in refused, host key unknown or changed | Red with that reason and no retry, because waiting cannot fix it. [Signing in](SPEC.md#signing-in) |
+| Port already taken | The holder named, no retry, the other program left alone. [Lifecycle](SPEC.md#lifecycle) |
+| Viewer opened before the tunnel | Waits, and loads the page when the modem answers. [The built-in viewer](SPEC.md#the-built-in-viewer) |
+| Tunnel drops with the page open | The viewer reloads once the modem answers again. [The built-in viewer](SPEC.md#the-built-in-viewer) |
+| A browser picked before the tunnel | It opens as soon as the modem answers. [Opening the stick page](SPEC.md#opening-the-stick-page) |
+| Browsers that cannot carry the rule | Safari (system proxy only) and Arc (ignores launch options) listed, greyed, with the reason. [External browsers](SPEC.md#external-browsers) |
+| The everyday browser is open | A separate instance with its own profile; the running one is never touched. [External browsers](SPEC.md#external-browsers) |
+| Firefox restarts itself | Its throwaway profile is removed at quit, or at the next launch if Firefox was still open. [External browsers](SPEC.md#external-browsers) |
+| The app crashed | The next start ends the ssh it left behind. [Lifecycle](SPEC.md#lifecycle) |
+| A password target without a password | Red *no password saved*, pointing to Settings. [Signing in](SPEC.md#signing-in) |
+
+</details>
 
 ---
 
@@ -314,13 +371,18 @@ installed: /Applications/LTE Stick View.app
 - **To see where it stands**: [TRACKING.md](TRACKING.md), with the roadmap, what is still to check, and the known gaps.
 - **To install and use it**: [Install](#install) and [Use](#use) above.
 - **To check it from a terminal**: [Building and checking from the command line](SPEC.md#building-and-checking-from-the-command-line) in SPEC: `--self-test`, `--simulate`, `--askpass-test` and the other switches.
-- **To see the real window**: [What it looks like](#what-it-looks-like) above.
+- **To see the real window**: [What it looks like](#what-it-looks-like) above, with the failure states in its collapsed groups.
 - **To change a mockup**: [assets/README.md](assets/README.md).
 - **For the manual commands this app replaces**: the server repo's [runbook 05, Read the stick](https://github.com/dattasaurabh82/orangepizero-solar-server/blob/main/runbooks/05-network-setup.md#read-the-stick).
 
 ---
 
 ## Repository layout
+
+<details>
+<summary>The files, one line each</summary>
+
+<br>
 
 ```text
 lte-usb-modem-remote-stick-view/
@@ -350,6 +412,8 @@ lte-usb-modem-remote-stick-view/
 │       └── Model.swift        targets, saved settings, status lines
 └── assets/          mockups (HTML sources and rendered PNGs) and screenshots of the app, index in its README
 ```
+
+</details>
 
 ---
 
