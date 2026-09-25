@@ -1,7 +1,7 @@
 # Tracking
 
 > [!NOTE]
-> **Status**: all seven build steps done; version 1.0.0 installed from `scripts/build-app.sh`
+> **Status**: all seven build steps done, plus releases: a universal disk image built and published by GitHub Actions
 >
 > **Verified**: `2026-09-25`, from the office over Tailscale, on the installed app; what each step checked is in its section of [SPEC.md](SPEC.md)
 >
@@ -37,6 +37,7 @@ Where the project stands: what was built, what is still to be checked, and what 
 - [x] **Step 5**: external browsers with a proxy rule for the modem's address only; Chrome, Firefox and Edge tested; Arc listed as unusable
 - [x] **Step 6**: Settings, Keychain passwords, the askpass helper, Detect from box
 - [x] **Step 7**: build script, icon, Info.plist, installed as `LTE Stick View.app`, README
+- [x] **Releases**: universal build, disk image with checksum, Build and Release workflows on GitHub, install notes with Sentinel
 
 ---
 
@@ -52,6 +53,7 @@ Each of these needs a place or a hand the build could not have from the office. 
 - [ ] **A relayed Tailscale path**: the route line should turn yellow *relayed via* a region. See [What Tailscale adds](SPEC.md#what-tailscale-adds).
 - [ ] **The two fix buttons clicked**: *Get Tailscale* and *Open Tailscale*; only their presence was checked.
 - [ ] **Closing the main window by its close button** while a viewer window is open; only a quit event and `SIGTERM` were tested. See [Lifecycle](SPEC.md#lifecycle).
+- [ ] **A release installed on another Mac**: download the image, allow it once, and connect; only checked on this Mac with the quarantine mark set by hand. See [Releases](SPEC.md#releases).
 - [ ] **The untested browsers**: Brave, Vivaldi, Chromium, Firefox Developer Edition and Nightly, listed yellow *untested*. See [External browsers](SPEC.md#external-browsers).
 
 ---
@@ -63,5 +65,5 @@ Not handled on purpose, or not yet; each is described where it applies.
 - **Tailscale SSH check mode**: the sign-in URL shows in the log, but the 10 second wait for the SOCKS port ends the attempt first. See [Signing in](SPEC.md#signing-in).
 - **Arc**: ignores the launch options that carry the proxy rule, so it cannot be used. See [External browsers](SPEC.md#external-browsers).
 - **Safari**: follows only the system-wide proxy, which the app does not change.
-- **Other Macs**: the app is signed ad hoc on the Mac that builds it and is not notarized; build it on each Mac. See [Build and install](SPEC.md#build-and-install).
+- **Notarization**: the app is signed ad hoc and not notarized, so a downloaded copy needs one Gatekeeper step on first launch; a Developer ID and notarization would remove it. See [Releases](SPEC.md#releases).
 - **The icon** is a placeholder drawn by `scripts/make-icon.swift`; a designed icon would replace `Resources/AppIcon.png`.

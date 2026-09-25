@@ -8,6 +8,10 @@ enum Main {
         // Started by ssh as its askpass program: answer and exit, nothing else.
         if ProcessInfo.processInfo.environment[Askpass.flag] == "1" { Askpass.runHelper() }
         let args = CommandLine.arguments
+        if args.contains("--version") {
+            print(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development build")
+            exit(0)
+        }
         if args.contains("--askpass-test") { AskpassTest.run() }
         if let i = args.firstIndex(of: "--simulate") {
             let what = args.dropFirst(i + 1).first ?? ""

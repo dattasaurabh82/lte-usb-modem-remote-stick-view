@@ -33,6 +33,7 @@
   - [Settings](#settings)
   - [Lifecycle](#lifecycle)
   - [Build and install](#build-and-install)
+    - [Releases](#releases)
     - [Building and checking from the command line](#building-and-checking-from-the-command-line)
   - [Screenshots](#screenshots)
   - [Mockups](#mockups)
@@ -342,6 +343,17 @@ A native SwiftUI app with no third-party dependencies, built as a Swift package,
 4. **Sign**: `codesign --force --sign -`, an ad hoc signature for this Mac, then `codesign --verify --strict`.
 5. **Install**: copies the bundle to `/Applications`, unless the script is given `--no-install`; it stops if a copy there is running.
 
+The script also takes `--universal`, which builds one binary for Apple silicon and Intel (`swift build --arch arm64 --arch x86_64`; each slice still declares macOS 14 as its minimum, checked with `vtool` on `2026-09-25`, although the compiler warns about Intel on newer deployment targets), and `--dmg`, which puts the app and a link to `/Applications` into `build/LTE-Stick-View-<version>.dmg` (compressed, about 1.4 MB) with a SHA-256 checksum file beside it.
+
+### Releases
+
+Two workflows run on GitHub's `macos-26` runner, Apple silicon with Xcode 26.6 by default. **Build** runs on every push and pull request: the universal build, the disk image, a strict signature check, `lipo` for both architectures, and `--version` to show the binary starts. **Release** runs on a tag such as `v1.0.0`: it refuses a tag that does not match `CFBundleShortVersionString`, does the same build and checks, and publishes a GitHub release with the image, its checksum, and install notes.
+
+**Why a downloaded copy needs one step on the receiving Mac.** An ad hoc signature proves the app was not changed after signing, but not who made it, and Apple has not notarized it. Everything downloaded carries a quarantine mark, and Gatekeeper refuses to open a quarantined app that is not notarized: `spctl` reports it *rejected*, and Apple's `syspolicy_check distribution` names the ad hoc signature (both seen on `2026-09-25` on a copy given the quarantine mark by hand). Removing the mark, with Sentinel, `xattr`, or *Open Anyway* in System Settings, lets that one app open while Gatekeeper stays on for everything else. A copy built from source on the same Mac carries no mark and opens directly.
+
+> [!NOTE]
+> Signing with a Developer ID certificate and notarizing with Apple would remove that step. It needs a paid Apple Developer Program membership; the release workflow could then sign and notarize with the certificate and an API key stored as repository secrets. Not done.
+
 The Info.plist names the app *LTE Stick View* with the bundle identifier `work.dattasaurabh.LTEStickView`, version `1.0.0`, the icon, and macOS 14 as the minimum. It has no App Transport Security exception, because none is needed: on `2026-09-25` the built-in viewer of the installed app loaded `http://192.168.8.1/#/` without one, as the development binary had.
 
 > [!NOTE]
@@ -374,7 +386,7 @@ The same binary has a headless check, `--self-test`, which connects, waits for t
 .build/debug/LTEStickView --self-test auto --detect
 ```
 
-A few more switches help check the window from a terminal: `--open-viewer` opens the built-in viewer right at launch; `--open-in` followed by part of a browser's name picks that browser at launch, which then opens once the stick answers; `--show-chooser` opens the chooser four seconds after launch and `--show-settings` the Settings window, both for screenshots; `--askpass-test` runs the password chain checks described in [Signing in](#signing-in) and exits; `--detect` after `--self-test` also runs Detect from box once connected; and `--log-stdout` prints every log line to the terminal as well.
+A few more switches help check the window from a terminal: `--open-viewer` opens the built-in viewer right at launch; `--open-in` followed by part of a browser's name picks that browser at launch, which then opens once the stick answers; `--show-chooser` opens the chooser four seconds after launch and `--show-settings` the Settings window, both for screenshots; `--version` prints the app's version and exits; `--askpass-test` runs the password chain checks described in [Signing in](#signing-in) and exits; `--detect` after `--self-test` also runs Detect from box once connected; and `--log-stdout` prints every log line to the terminal as well.
 
 This is what `--self-test auto --drop` printed from the office on `2026-09-25`:
 

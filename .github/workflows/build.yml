@@ -1,0 +1,32 @@
+# Checks on every push and pull request that the app still builds, signs, packs and starts.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build, bundle, sign and pack
+        run: scripts/build-app.sh --universal --dmg --no-install
+
+      - name: Check the app
+        run: |
+          APP="build/LTE Stick View.app"
+          codesign --verify --strict "$APP"
+          lipo -info "$APP/Contents/MacOS/LTEStickView"
+          "$APP/Contents/MacOS/LTEStickView" --version

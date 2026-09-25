@@ -7,7 +7,8 @@
 ![Platform: macOS 14 and later](https://img.shields.io/badge/platform-macOS%2014%2B-1e40af)
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-1e40af)
-![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-4a4946)
+[![Latest release](https://img.shields.io/github/v/release/dattasaurabh82/lte-usb-modem-remote-stick-view?color=4a4946&label=release)](https://github.com/dattasaurabh82/lte-usb-modem-remote-stick-view/releases/latest)
+[![Build](https://github.com/dattasaurabh82/lte-usb-modem-remote-stick-view/actions/workflows/build.yml/badge.svg)](https://github.com/dattasaurabh82/lte-usb-modem-remote-stick-view/actions/workflows/build.yml)
 ![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-4a4946)
 
 <img src="assets/app-main-window.png" alt="LTE Stick View connected over Tailscale: route switch, five green status lines, Open stick page, the log" width="640">
@@ -42,6 +43,8 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
     - [Experience](#experience)
     - [Edge cases](#edge-cases)
   - [Install](#install)
+    - [From a release](#from-a-release)
+    - [From source](#from-source)
   - [Use](#use)
   - [Where to start](#where-to-start)
   - [Repository layout](#repository-layout)
@@ -324,30 +327,66 @@ Three short lists, closed by default: what was decided on the technical side, on
 
 ## Install
 
-It builds on the Mac that will run it, from source; there is no download.
+Two ways: download the disk image from a release, or build it from source on the Mac that will run it. Both give the same app, for macOS 14 or later, on Apple silicon and Intel. The Tailscale app is optional, needed only to reach the board away from its home network.
 
-**What it needs**: macOS 14 or later, and Xcode or the Xcode command line tools with Swift 6. The Tailscale app is optional, needed only to reach the board away from its home network.
+### From a release
+
+1. Download `LTE-Stick-View-<version>.dmg` from the [latest release](https://github.com/dattasaurabh82/lte-usb-modem-remote-stick-view/releases/latest), open it, and drag **LTE Stick View** onto **Applications**.
+2. Allow it once. The app is signed ad hoc, not notarized by Apple, so macOS blocks it the first time; choose one of these:
+
+- **With [Sentinel](https://github.com/alienator88/Sentinel/releases)**: drop the app on *Allow unsigned app to launch*. Sentinel removes the quarantine mark macOS puts on downloads; its self-sign zone is not needed, the app is already signed.
+- **In Terminal**:
 
 ```bash
-git clone git@github.com:dattasaurabh82/lte-usb-modem-remote-stick-view.git
+xattr -dr com.apple.quarantine "/Applications/LTE Stick View.app"
+```
+
+- **In System Settings**: open the app once and dismiss the warning, then **Privacy & Security**, **Open Anyway**.
+
+> [!WARNING]
+> Leave Gatekeeper itself switched on. Sentinel can turn it off for the whole Mac; only this one app needs the exception.
+
+> [!TIP]
+> To check the download, put the `.sha256` file from the release next to the image and run `shasum -a 256 -c LTE-Stick-View-<version>.dmg.sha256`. It answers `OK` when the image is the one GitHub built.
+
+<details>
+<summary>How a release is made</summary>
+
+<br>
+
+Pushing a tag such as `v1.0.0` runs the **Release** workflow on GitHub's `macos-26` runner. It checks that the tag matches the version in `Resources/Info.plist`, builds a universal app with `scripts/build-app.sh --universal --dmg --no-install`, checks the signature, the two architectures and that the app starts, and publishes the release with the image and its checksum. The **Build** workflow does the same checks on every push, without publishing. The workflows are in `.github/workflows/`.
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+</details>
+
+### From source
+
+**What it needs**: Xcode or the Xcode command line tools with Swift 6.
+
+```bash
+git clone https://github.com/dattasaurabh82/lte-usb-modem-remote-stick-view.git
 cd lte-usb-modem-remote-stick-view
 scripts/build-app.sh
 ```
 
-The script builds a release binary, puts it into `LTE Stick View.app` with its icon, signs it for this Mac, and copies it into `/Applications`. The end of its output:
+The script builds a release binary for this Mac, puts it into `LTE Stick View.app` with its icon, signs it ad hoc, and copies it into `/Applications`. Built on the same Mac, it runs without any Gatekeeper step, because nothing downloaded it. The end of its output:
 
 ```text
-== sign (ad hoc, for this Mac only)
+== sign (ad hoc)
 build/LTE Stick View.app: replacing existing signature
 signature ok
 installed: /Applications/LTE Stick View.app
 ```
 
 > [!TIP]
-> `scripts/build-app.sh --no-install` builds into `build/` only. To update, quit the app and run the script again; it refuses to replace a copy that is running.
+> Options: `--no-install` builds into `build/` only; `--universal` builds for Apple silicon and Intel together; `--dmg` also makes the disk image and its checksum in `build/`. To update, quit the app and run the script again; it refuses to replace a copy that is running.
 
-> [!IMPORTANT]
-> The signature is ad hoc, made on this Mac for this Mac. The app is not notarized and is not meant to be copied to other Macs; build it on each one.
+> [!NOTE]
+> After an update, macOS may ask once whether the new app may read a password saved in the Keychain by the previous one, because each build carries a new ad hoc signature.
 
 ---
 
@@ -391,9 +430,12 @@ lte-usb-modem-remote-stick-view/
 ├── TRACKING.md      roadmap, what is still to check, known gaps
 ├── LICENSE          GNU LGPL 2.1
 ├── Package.swift    the Swift package: one app target, macOS 14 and later
-├── .gitignore       ignores build output and the local working docs
+├── .gitignore       ignores build output and the local working docs  
+├── .github/workflows/
+│   ├── build.yml        on every push: build, sign, pack, check the app starts
+│   └── release.yml      on a version tag: the same, then a GitHub release with the image
 ├── scripts/
-│   ├── build-app.sh     builds, signs and installs LTE Stick View.app
+│   ├── build-app.sh     builds, signs and installs LTE Stick View.app; --universal, --dmg, --no-install
 │   └── make-icon.swift  draws Resources/AppIcon.png
 ├── Resources/
 │   ├── Info.plist       the bundle's name, identifier, version, icon, minimum macOS

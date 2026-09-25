@@ -1,0 +1,66 @@
+# Publishes a GitHub release with the disk image when a version tag such as v1.0.0 is pushed.
+# The tag must match CFBundleShortVersionString in Resources/Info.plist.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag matches the app version
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Resources/Info.plist)
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $VERSION in Resources/Info.plist" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build, bundle, sign and pack
+        run: scripts/build-app.sh --universal --dmg --no-install
+
+      - name: Check the app
+        run: |
+          APP="build/LTE Stick View.app"
+          codesign --verify --strict "$APP"
+          lipo -info "$APP/Contents/MacOS/LTEStickView"
+          "$APP/Contents/MacOS/LTEStickView" --version
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DMG="build/LTE-Stick-View-$VERSION.dmg"
+          cat > build/notes.md <<NOTES
+          LTE Stick View $VERSION for macOS 14 or later, one app for Apple silicon and Intel.
+
+          ## Install
+
+          1. Download \`LTE-Stick-View-$VERSION.dmg\`, open it, and drag **LTE Stick View** onto **Applications**.
+          2. The app is signed ad hoc, not notarized by Apple, so macOS blocks it on first launch. Allow it once, in one of three ways:
+             - with [Sentinel](https://github.com/alienator88/Sentinel/releases): drop the app on *Allow unsigned app to launch*;
+             - in Terminal: \`xattr -dr com.apple.quarantine "/Applications/LTE Stick View.app"\`;
+             - or open it once, then **System Settings**, **Privacy & Security**, **Open Anyway**.
+          3. Check the download, if you like: \`shasum -a 256 -c LTE-Stick-View-$VERSION.dmg.sha256\` in the folder with both files.
+
+          Leave Gatekeeper itself switched on; only this app needs the exception.
+
+          Set-up, use and everything the app considers: see the [README](https://github.com/$GITHUB_REPOSITORY#readme).
+          NOTES
+          gh release create "$GITHUB_REF_NAME" "$DMG" "$DMG.sha256" \
+            --title "LTE Stick View $VERSION" \
+            --notes-file build/notes.md
