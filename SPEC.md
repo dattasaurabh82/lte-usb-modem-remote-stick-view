@@ -1,7 +1,7 @@
 # LTE Stick View specification
 
 > [!NOTE]
-> **Status**: all seven steps are built; version 1.0.0 runs from `/Applications` as `LTE Stick View.app`, made by `scripts/build-app.sh`
+> **Status**: all seven steps are built; version 1.0.0 is published as a [GitHub release](https://github.com/dattasaurabh82/lte-usb-modem-remote-stick-view/releases/tag/v1.0.0) with a universal disk image, built by the Release workflow, and runs from `/Applications`
 >
 > **Verified**: `2026-09-25` from the office, on the installed app launched with `open` as Finder does: connected over the tailnet, the proxy answering `200`, a normal quit ending ssh; the self-test all green and the thirteen askpass checks from inside the bundle; the built-in viewer loading the plain `http` page with no App Transport Security exception; and from steps 2 to 6, everything listed in their sections
 >

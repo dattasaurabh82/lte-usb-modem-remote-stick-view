@@ -22,7 +22,7 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
 <br>
 
 > [!NOTE]
-> All seven build steps are done, and the app runs from `/Applications`. A few things can only be checked at home or by hand; they are tracked in [TRACKING.md](TRACKING.md).
+> All seven build steps are done, and version 1.0.0 is out as a [release](https://github.com/dattasaurabh82/lte-usb-modem-remote-stick-view/releases/tag/v1.0.0) with a disk image for Apple silicon and Intel. A few things can only be checked at home or by hand; they are tracked in [TRACKING.md](TRACKING.md).
 
 > [!TIP]
 > **Our setup is the example throughout**: an Orange Pi Zero reached as `root@orangepizero.lan` at home and `root@orangepizero` over Tailscale, with a Huawei E3372h-320 modem at `192.168.8.1`. Wherever these appear, the general form is given first; put in your own user, board names and modem address.
