@@ -1,6 +1,6 @@
 # Assets
 
-The mockups of the app, each as an HTML source and the PNG rendered from it. The PNGs are what [SPEC.md](../SPEC.md#mockups) and the [README](../README.md) show.
+The mockups of the app, each as an HTML source and the PNG rendered from it, and screenshots of the real app. They are what [SPEC.md](../SPEC.md#mockups) and the [README](../README.md) show.
 
 ## Files
 
@@ -8,6 +8,8 @@ The mockups of the app, each as an HTML source and the PNG rendered from it. The
 - `mock-main-window.html`, `mock-main-window.png`: the main window, connected over the tailnet.
 - `mock-browser-chooser.html`, `mock-browser-chooser.png`: the chooser that opens from **Open stick page…**.
 - `mock-settings.html`, `mock-settings.png`: the settings window.
+- `app-main-window.png`: a screenshot of the real app, connected over the tailnet.
+- `app-tailscale-missing.png`: a screenshot of the real app started with `--simulate tailscale-missing`.
 
 ## After editing a mockup
 
@@ -18,7 +20,7 @@ Run from this folder. Each render is stopped after 7 seconds, because headless C
 
 ```bash
 C="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-for spec in "mock-main-window 490" "mock-browser-chooser 360" "mock-settings 408"; do
+for spec in "mock-main-window 520" "mock-browser-chooser 360" "mock-settings 408"; do
   set -- ${=spec}
   "$C" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
     --user-data-dir=/tmp/lsv-mock-render --window-size=716,$2 \
@@ -30,3 +32,19 @@ rm -rf /tmp/lsv-mock-render
 
 > [!NOTE]
 > The loop is written for zsh (`${=spec}` splits the pair). In bash, write `set -- $spec` instead.
+
+## Retaking a screenshot of the app
+
+The `app-*.png` files are captures of the running window, not renders. Retake them when the window changes. From the repo root, after `swift build`, this starts the app, finds its window and captures only that window, then quits the app. Add `--simulate tailscale-missing` after the binary for the second screenshot.
+
+```bash
+.build/debug/LTEStickView >/dev/null 2>&1 &
+APP=$!
+sleep 8
+WID=$(swift -e "import CoreGraphics; let l = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as! [[String: Any]]; for w in l where (w[kCGWindowOwnerPID as String] as? Int32) == $APP && (w[kCGWindowLayer as String] as? Int) == 0 { print(w[kCGWindowNumber as String]!); break }")
+screencapture -x -o -l $WID assets/app-main-window.png
+kill -TERM $APP
+```
+
+> [!NOTE]
+> `screencapture` needs Screen Recording permission for the terminal it runs in, granted once in System Settings, Privacy and Security.

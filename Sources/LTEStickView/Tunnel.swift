@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import Network
@@ -17,13 +18,22 @@ final class Tunnel {
         didSet { UserDefaults.standard.set(choice, forKey: "route") }
     }
 
-    private(set) var route = Line(light: .hollow, word: "not tried")
+    private(set) var route = Line(light: .hollow, word: "not tried") {
+        didSet { updateTailscaleLine() }
+    }
+    private(set) var tailscale = Line(light: .hollow, word: "not checked")
+    /// The one-click fix shown on the tailscale line, when there is one.
+    private(set) var tailscaleFix: TailscaleFix?
     private(set) var ssh = Line(light: .hollow, word: "down")
     private(set) var socks = Line(light: .hollow, word: "off")
     private(set) var stick = Line(light: .hollow, word: "not checked")
     private(set) var connectedAt: Date?
     private(set) var retryAt: Date?
     private(set) var attempt = 0
+    /// Why the last attempt failed, shown while waiting for the next one.
+    private(set) var lastReason = ""
+    /// When Tailscale was last asked; the self-test waits for a reading after connect.
+    private(set) var tailscaleReadAt: Date?
     private(set) var log: [String] = []
 
     /// True while ssh is starting or up; the Reconnect button shows when false.
@@ -33,8 +43,10 @@ final class Tunnel {
     private var process: Process?
     private var active: Target?
     private var skipped: [String] = []
-    /// nil until Tailscale has been asked for this session.
+    /// nil until Tailscale has been asked.
     private var peer: TailscaleState?
+    /// The first target that goes over a tailnet; Tailscale matters only if there is one.
+    private var tailnetTarget: Target? { config.targets.first { $0.signIn == .tailnet } }
     private var stderrText = ""
     private var forcedReason: String?
     private var stopping = false
@@ -100,6 +112,9 @@ final class Tunnel {
                 return
             }
 
+            await self.refreshTailscale(gen: gen)
+            guard gen == self.generation else { return }
+
             let target: Target
             if pick == Tunnel.auto {
                 guard let found = await self.probeAll(targets, gen: gen) else { return }
@@ -107,6 +122,10 @@ final class Tunnel {
             } else {
                 target = targets.first { $0.name == pick } ?? targets[0]
                 self.route = Line(light: .yellow, word: "trying", detail: target.host)
+                if target.signIn == .tailnet, Tailscale.simulated != nil {
+                    self.failWithoutSSH(target, why: "name not found", gen: gen)
+                    return
+                }
             }
             guard gen == self.generation else { return }
             self.active = target
@@ -118,7 +137,8 @@ final class Tunnel {
     private func probeAll(_ targets: [Target], gen: Int) async -> Target? {
         let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
             for (i, t) in targets.enumerated() {
-                group.addTask { (i, await Probe.tcp(host: t.host)) }
+                let fake = t.signIn == .tailnet && Tailscale.simulated != nil
+                group.addTask { (i, fake ? .closed("name not found") : await Probe.tcp(host: t.host)) }
             }
             var out = [Int: ProbeResult]()
             for await (i, r) in group { out[i] = r }
@@ -129,6 +149,7 @@ final class Tunnel {
         note("probe " + summary.joined(separator: ", "))
         guard let i = targets.indices.first(where: { results[$0]?.isOpen == true }) else {
             route = Line(light: .red, word: "no route", detail: "no target answered on port 22")
+            lastReason = "no route"
             lastFailureRetryable = true
             scheduleRetry(gen: gen)
             return nil
@@ -220,7 +241,7 @@ final class Tunnel {
                     try? await Task.sleep(for: .seconds(2))
                     first = false
                 }
-                await self.refreshPeer(gen: gen)
+                await self.refreshTailscale(gen: gen)
                 try? await Task.sleep(for: .seconds(30))
             }
         }
@@ -242,46 +263,112 @@ final class Tunnel {
         }
     }
 
-    private func refreshPeer(gen: Int) async {
-        guard let host = active?.host else { return }
+    /// Asks Tailscale about the tailnet target, whichever route is in use.
+    private func refreshTailscale(gen: Int) async {
+        guard let host = tailnetTarget?.host else { peer = nil; updateTailscaleLine(); return }
         let state = await Task.detached { Tailscale.state(for: host) }.value
-        guard gen == generation, process != nil else { return }
+        guard gen == generation else { return }
         if state != peer {
             switch state {
-            case .peer(let p): note("tailscale: peer \(p.online ? "online" : "offline"), \(Self.words(p.path))")
-            case .notRunning(let s): note("tailscale: not running (\(s))")
-            case .notAPeer, .unknown: break
+            case .peer(let p): note("tailscale: \(host) \(p.online ? "online" : "offline"), \(Self.words(p.path))")
+            case .notRunning(let s): note("tailscale: \(Tailscale.word(forBackend: s)) (\(s))")
+            case .notInstalled: note("tailscale: not installed")
+            case .unreadable: note("tailscale: installed, status could not be read")
+            case .notAPeer: note("tailscale: running, \(host) is not on this tailnet")
             }
         }
         peer = state
+        tailscaleReadAt = Date()
+        updateTailscaleLine()
         updateRouteLine()
     }
 
-    /// Builds the route line from the target in use, what was skipped, and the Tailscale state.
+    /// Builds the route line from the target in use, what Auto skipped, and the Tailscale path.
     private func updateRouteLine() {
         guard let t = active, connectedAt != nil else { return }
         var word = t.name
         var light = Light.green
-        var detail = [t.host]
-        if !skipped.isEmpty { detail.append(contentsOf: skipped) }
-        switch peer {
-        case nil:
-            break
-        case .peer(let p):
+        if t.signIn == .tailnet, case .peer(let p) = peer {
             switch p.path {
             case .direct: word += ", direct"
             case .relayed(let via): word += ", relayed via \(via)"; light = .yellow
             case .idle: break
             }
-            detail.append(p.online ? "peer online" : "peer offline")
-        case .notRunning:
-            if t.signIn == .tailnet { detail.append("Tailscale not running") }
-        case .unknown:
-            if t.signIn == .tailnet { detail.append("tailnet state unknown") }
-        case .notAPeer:
+        }
+        route = Line(light: light, word: word, detail: ([t.host] + skipped).joined(separator: ", "))
+    }
+
+    /// The tailscale line. Quiet while Tailscale is not needed; red, with a fix, when it is why the box cannot be reached.
+    private func updateTailscaleLine() {
+        guard let tt = tailnetTarget else {
+            tailscale = Line(light: .hollow, word: "not used", detail: "no target goes over a tailnet")
+            tailscaleFix = nil
+            return
+        }
+        let blocked = route.light == .red && (choice == Tunnel.auto || choice == tt.name)
+        let bad: Light = blocked ? .red : .yellow
+        switch peer {
+        case nil:
+            tailscale = Line(light: .hollow, word: "not checked")
+            tailscaleFix = nil
+        case .notInstalled?:
+            tailscale = Line(light: blocked ? .red : .hollow, word: "not installed",
+                             detail: blocked ? "needed to reach \(tt.host) from this network" : "needed only away from the home network")
+            tailscaleFix = .get
+        case .unreadable?:
+            tailscale = Line(light: bad, word: "installed", detail: "its status could not be read")
+            tailscaleFix = .open
+        case .notRunning(let s)?:
+            let todo = switch s {
+            case "NeedsLogin", "NeedsMachineAuth": "sign in"
+            case "Starting": "wait for it"
+            default: "start it"
+            }
+            tailscale = Line(light: bad, word: Tailscale.word(forBackend: s),
+                             detail: blocked ? "\(todo) to reach \(tt.host)" : "open Tailscale to \(todo)")
+            tailscaleFix = .open
+        case .notAPeer?:
+            tailscale = Line(light: bad, word: "running", detail: "\(tt.host) is not on this tailnet")
+            tailscaleFix = nil
+        case .peer(let p)?:
+            tailscale = p.online
+                ? Line(light: .green, word: "running", detail: "\(tt.host) online")
+                : Line(light: bad, word: "running", detail: "\(tt.host) offline")
+            tailscaleFix = nil
+        }
+    }
+
+    /// The button on the tailscale line: the download page, or the installed app.
+    func applyTailscaleFix() {
+        switch tailscaleFix {
+        case .get?:
+            note("opening \(Tailscale.downloadURL.absoluteString)")
+            NSWorkspace.shared.open(Tailscale.downloadURL)
+        case .open?:
+            guard let app = Tailscale.appURL else { return }
+            note("opening Tailscale")
+            NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+            let gen = generation
+            Task {
+                for wait in [5, 10, 15] {
+                    try? await Task.sleep(for: .seconds(wait))
+                    await self.refreshTailscale(gen: gen)
+                }
+            }
+        case nil:
             break
         }
-        route = Line(light: light, word: word, detail: detail.joined(separator: ", "))
+    }
+
+    /// For a target that cannot be tried at all (a simulated missing tailnet): fail as ssh would, then retry.
+    private func failWithoutSSH(_ t: Target, why: String, gen: Int) {
+        active = t
+        note("\(t.host): \(why) (simulated)")
+        ssh = Line(light: .red, word: "failed", detail: why)
+        lastReason = why
+        route = Line(light: .red, word: "no route", detail: "\(t.host): \(why)")
+        lastFailureRetryable = true
+        scheduleRetry(gen: gen)
     }
 
     private static func words(_ path: PeerState.Path) -> String {
@@ -310,7 +397,6 @@ final class Tunnel {
         let wasUp = connectedAt != nil
         process = nil
         connectedAt = nil
-        peer = nil
         Orphan.clear()
         socks = Line(light: .hollow, word: "off")
         stick = Line(light: .hollow, word: "not checked")
@@ -323,6 +409,7 @@ final class Tunnel {
         let why = forcedReason ?? Self.reason(stderrText)
         note("ssh \(how): \(why)" + (wasUp ? " (was up)" : ""))
         ssh = Line(light: .red, word: "failed", detail: why)
+        lastReason = why
         let host = active?.host ?? ""
         if ["name not found", "timed out", "refused"].contains(why) {
             route = Line(light: .red, word: "no route", detail: "\(host): \(why)")
@@ -385,7 +472,7 @@ final class Tunnel {
             } else {
                 let gen = self.generation
                 await self.checkStick(gen: gen)
-                await self.refreshPeer(gen: gen)
+                await self.refreshTailscale(gen: gen)
             }
         }
     }
@@ -417,7 +504,6 @@ final class Tunnel {
         if p.isRunning { kill(p.processIdentifier, SIGKILL) }
         process = nil
         connectedAt = nil
-        peer = nil
         Orphan.clear()
         ssh = Line(light: .hollow, word: "down")
         socks = Line(light: .hollow, word: "off")
@@ -437,6 +523,18 @@ final class Tunnel {
         let stamp = Date().formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
         log.append("\(stamp) \(s)")
         if log.count > 200 { log.removeFirst(log.count - 200) }
+    }
+}
+
+/// What the tailscale line's button does.
+enum TailscaleFix: Sendable {
+    case get, open
+
+    var label: String {
+        switch self {
+        case .get: "Get Tailscale"
+        case .open: "Open Tailscale"
+        }
     }
 }
 

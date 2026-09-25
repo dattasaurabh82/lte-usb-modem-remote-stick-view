@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Network
 
@@ -69,31 +70,67 @@ struct PeerState: Sendable, Equatable {
     var path: Path
 }
 
+/// Everything the tailscale line can say, from "not on this Mac" to "peer online".
 enum TailscaleState: Sendable, Equatable {
-    case peer(PeerState)
-    case notAPeer
+    /// Neither the app nor a CLI is on this Mac.
+    case notInstalled
+    /// The app is there but its CLI did not answer.
+    case unreadable
+    /// The CLI answered with a backend state other than Running: Stopped, NeedsLogin, Starting and so on.
     case notRunning(String)
-    case unknown
+    /// Running, but the host is not a peer on this tailnet.
+    case notAPeer
+    case peer(PeerState)
 }
 
-/// Reads `tailscale status --json` and finds the peer that matches a host name or address.
+/// Finds Tailscale on this Mac and reads `tailscale status --json`.
 enum Tailscale {
-    /// Where the CLI can live, in the order tried. The app bundle's binary needs TAILSCALE_BE_CLI=1.
-    static let candidates = [
+    /// Bundle identifiers: the Mac App Store build, then the standalone build.
+    static let bundleIDs = ["io.tailscale.ipn.macos", "io.tailscale.ipn.macsys"]
+    static let downloadURL = URL(string: "https://tailscale.com/download/mac")!
+
+    /// Where the CLI can live. The app bundle's binary needs TAILSCALE_BE_CLI=1.
+    static let cliCandidates = [
         "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
         "/usr/local/bin/tailscale",
         "/opt/homebrew/bin/tailscale",
     ]
 
+    /// Set by --simulate: tailscale-missing, tailscale-stopped, tailscale-signed-out, tailscale-no-peer.
+    nonisolated(unsafe) static var simulated: String?
+    static let simulations = ["tailscale-missing", "tailscale-stopped", "tailscale-signed-out", "tailscale-no-peer"]
+
+    /// The Tailscale app, found by bundle identifier wherever it is installed.
+    static var appURL: URL? {
+        if simulated == "tailscale-missing" { return nil }
+        for id in bundleIDs {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return url }
+        }
+        return nil
+    }
+
+    /// The CLI: inside the app bundle found above first, then the usual paths.
     static var cliPath: String? {
-        candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        if simulated == "tailscale-missing" { return nil }
+        if let app = appURL {
+            let inside = app.appendingPathComponent("Contents/MacOS/Tailscale").path
+            if FileManager.default.isExecutableFile(atPath: inside) { return inside }
+        }
+        return cliCandidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     static func state(for host: String) -> TailscaleState {
-        guard let cli = cliPath else { return .unknown }
+        switch simulated {
+        case "tailscale-missing": return .notInstalled
+        case "tailscale-stopped": return .notRunning("Stopped")
+        case "tailscale-signed-out": return .notRunning("NeedsLogin")
+        case "tailscale-no-peer": return .notAPeer
+        default: break
+        }
+        guard let cli = cliPath else { return appURL == nil ? .notInstalled : .unreadable }
         let r = System.run(cli, ["status", "--json"], env: ["TAILSCALE_BE_CLI": "1"])
-        guard r.status == 0, let data = r.out.data(using: .utf8),
-              let status = try? JSONDecoder().decode(Status.self, from: data) else { return .unknown }
+        guard let data = r.out.data(using: .utf8),
+              let status = try? JSONDecoder().decode(Status.self, from: data) else { return .unreadable }
         guard status.BackendState == "Running" else { return .notRunning(status.BackendState) }
         let h = host.lowercased()
         let match = (status.Peer ?? [:]).values.first { p in
@@ -113,6 +150,17 @@ enum Tailscale {
             path = .idle
         }
         return .peer(PeerState(online: p.Online ?? false, path: path))
+    }
+
+    /// Readable word for a backend state.
+    static func word(forBackend s: String) -> String {
+        switch s {
+        case "Stopped": "stopped"
+        case "NeedsLogin", "NeedsMachineAuth": "signed out"
+        case "Starting": "starting"
+        case "NoState": "not started"
+        default: s.lowercased()
+        }
     }
 
     private struct Status: Decodable {

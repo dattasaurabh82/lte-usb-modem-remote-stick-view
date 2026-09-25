@@ -1,11 +1,11 @@
 # LTE Stick View specification
 
 > [!NOTE]
-> **Status**: route choice and reconnect are built (step 3 of 7): Auto probes the targets, the route line shows the Tailscale path, a lost link reconnects on its own with backoff, and a network change retries at once
+> **Status**: route choice, reconnect and the Tailscale check are built (step 3 of 7): Auto probes the targets, a fifth line reports Tailscale and offers the fix when it is the reason the box cannot be reached, a lost link reconnects on its own, and a network change retries at once
 >
-> **Verified**: `2026-09-25` from the office: Auto skipping the LAN name and picking the tailnet with the path read as *direct*; ssh killed mid-session and back, all green, 4 s later; a taken port not retried; and from step 2, quit by `SIGTERM` and a crashed run's ssh ended on the next start (see [Building and checking from the command line](#building-and-checking-from-the-command-line))
+> **Verified**: `2026-09-25` from the office: Auto skipping the LAN name and picking the tailnet with the path read as *direct*; ssh killed mid-session and all green again within 4 s; the four Tailscale failures (missing, stopped, signed out, box not on the tailnet) by `--simulate`, each red with its cause and fix, and quiet when the LAN was chosen by hand; a taken port not retried; and from step 2, quit by `SIGTERM` and a crashed run's ssh ended on the next start
 >
-> **Open**: the LAN path, to be run at home; a real network change (Wi-Fi off and on, or arriving home), which the code watches but was not triggered in testing; the *relayed* and *Tailscale not running* lines, not seen yet; Arc's flags and the Firefox launch
+> **Open**: the LAN path, to be run at home; a real network change; the *relayed* path; a Mac that really has no Tailscale, and what the Tailscale CLI answers when its app is installed but has never been opened; Arc's flags and the Firefox launch
 >
 > **Next**: step 4, the built-in viewer (see the [roadmap](README.md#roadmap))
 
@@ -23,6 +23,7 @@
   - [Signing in](#signing-in)
   - [Choosing the route](#choosing-the-route)
     - [What Tailscale adds](#what-tailscale-adds)
+    - [Without Tailscale](#without-tailscale)
     - [When the link drops](#when-the-link-drops)
   - [When a line turns green](#when-a-line-turns-green)
   - [Opening the stick page](#opening-the-stick-page)
@@ -33,6 +34,7 @@
   - [Lifecycle](#lifecycle)
   - [Build and install](#build-and-install)
     - [Building and checking from the command line](#building-and-checking-from-the-command-line)
+  - [Screenshots](#screenshots)
   - [Mockups](#mockups)
   - [Out of scope](#out-of-scope)
 
@@ -129,8 +131,28 @@ Once the tunnel is up, the app asks Tailscale about the box: it runs `tailscale 
 
 The CLI is looked for inside the app bundle at `/Applications/Tailscale.app/Contents/MacOS/Tailscale` first, then at `/usr/local/bin/tailscale` and `/opt/homebrew/bin/tailscale`. It always runs with `TAILSCALE_BE_CLI=1`, because without it the bundled binary can decide it was started as the GUI app.
 
+What Tailscale says about the box itself, running or not and online or not, goes on its own line, described next.
+
+### Without Tailscale
+
+> [!IMPORTANT]
+> Tailscale is **optional**. At home the LAN target does the whole job, so a Mac without Tailscale is a normal case, not an error. The app therefore never asks for it at launch. It says so, on one line, *where it matters*, and offers the fix only then.
+
+The **tailscale** line sits under the route line and reports on the first target that signs in over a tailnet (*Tailscale* by default). It is read before every connect attempt, on every network change, and every 30 seconds while a session is up. The app is looked for by bundle identifier, `io.tailscale.ipn.macos` for the Mac App Store build and `io.tailscale.ipn.macsys` for the standalone one, so it is found wherever it is installed. The CLI inside it is used first, then `/usr/local/bin/tailscale` and `/opt/homebrew/bin/tailscale`.
+
+Whether a problem is shown quietly or in red depends on one question: *is it the reason the box cannot be reached right now?* It is when the route line is red and the route choice is Auto or the tailnet target. Then the line turns red and names what to do. Otherwise the same state is shown hollow or yellow.
+
+1. **Not installed**: neither the app nor a CLI is on this Mac. Quiet: hollow *not installed, needed only away from the home network*. Blocking: red *not installed, needed to reach orangepizero from this network*. The button **Get Tailscale** opens `https://tailscale.com/download/mac` in the default browser.
+2. **Stopped, not started, starting**: the CLI answers with that backend state. Yellow, or red with *start it* or *wait for it*. The button **Open Tailscale** opens the installed app.
+3. **Signed out**: the backend needs a login (`NeedsLogin` or `NeedsMachineAuth`). Yellow, or red *sign in to reach orangepizero*, with **Open Tailscale**.
+4. **Box not on this tailnet**: Tailscale runs, but no peer matches the target, which is what someone signed into a different tailnet sees. Yellow, or red *orangepizero is not on this tailnet*. No button: that one needs an invitation or a different account.
+5. **Installed, status unreadable**: the app is there but its CLI did not answer. Yellow *installed, its status could not be read*, with **Open Tailscale**.
+6. **Running**: green *running, orangepizero online*, or *offline* in yellow, red when it blocks, because then the box itself is down.
+
+After **Open Tailscale**, the app reads the state again after 5, 15 and 30 seconds. Once Tailscale connects, the Mac's network changes, which also triggers an attempt at once. When no target signs in over a tailnet at all, the line is hollow *not used*.
+
 > [!TIP]
-> If no Tailscale CLI is found, Auto still works: the TCP probe alone decides. On a target signed in over the tailnet, the route line then says *tailnet state unknown*, or *Tailscale not running* when the CLI answers that it is stopped.
+> Every one of these states can be seen without touching Tailscale: `--simulate` with `tailscale-missing`, `tailscale-stopped`, `tailscale-signed-out` or `tailscale-no-peer` makes the app report that state and treat the tailnet names as unreachable, in the window or in the self-test (see [Building and checking from the command line](#building-and-checking-from-the-command-line)).
 
 ### When the link drops
 
@@ -200,10 +222,11 @@ Each strategy carries a tested flag. A browser whose launch has not been run on 
 
 ## Status lines
 
-The main window has four lines, each with its own dot. Green means working, yellow means look, red means broken, and a hollow grey dot means not present or not tried yet.
+The main window has five lines, each with its own dot. Green means working, yellow means look, red means broken, and a hollow grey dot means not present or not tried yet.
 
-- **route**: which target is in use. Yellow *probing* while Auto probes the targets, or *trying* while a named target connects; green with the target's name and, over the tailnet, *direct*; yellow *relayed via* a region; red *no route* when the host could not be reached (*name not found*, *timed out* or *refused*) or no target answered the probe; red *lost* when a working session dropped. The grey detail lists the host, the targets Auto skipped and why, and *peer online* or *peer offline*. Grey *not tried* before the first connect.
-- **ssh session**: grey *down*; yellow *connecting*; green *up* with the time since connect, as in *up 00:12:41*, and the target; yellow *waiting* with the countdown to the next attempt and the last reason; red *failed* with the reason, one of *sign-in refused*, *host key unknown*, *host key changed*, *port in use*, *name not found*, *timed out*, *refused*, *link lost* (the server stopped answering or the connection was cut), or *exited* for anything else, in which case the log holds ssh's own words.
+- **route**: which target is in use. Yellow *probing* while Auto probes the targets, or *trying* while a named target connects; green with the target's name and, over the tailnet, *direct*; yellow *relayed via* a region; red *no route* when the host could not be reached (*name not found*, *timed out* or *refused*) or no target answered the probe; red *lost* when a working session dropped. The grey detail lists the host and the targets Auto skipped, with why. Grey *not tried* before the first connect.
+- **tailscale**: whether Tailscale can carry the tailnet route, as laid out in [Without Tailscale](#without-tailscale): green *running*; hollow *not installed* or *not used*; yellow or red *not installed*, *stopped*, *not started*, *starting*, *signed out*, *installed* or *running* with the reason, red only when it is why the box cannot be reached. Grey *not checked* before the first reading.
+- **ssh session**: grey *down*; yellow *connecting*; green *up* with the time since connect, as in *up 00:12:41*, and the target; yellow *waiting* with the countdown to the next attempt (*retrying now* at zero), the attempt number and the last reason, which can also be *no route*; red *failed* with the reason, one of *sign-in refused*, *host key unknown*, *host key changed*, *port in use*, *name not found*, *timed out*, *refused*, *link lost* (the server stopped answering or the connection was cut), or *exited* for anything else, in which case the log holds ssh's own words.
 - **socks proxy**: grey *off*; green with the address, `127.0.0.1:1080`; red *port in use* with the name of the process holding it.
 - **lte stick**: grey *not checked*; yellow *checking*; green *reachable* with the model and address; red *no answer* when the box is reachable but the stick is not (unplugged, or `lte0` down on the box).
 
@@ -251,35 +274,52 @@ swift build
 .build/debug/LTEStickView
 ```
 
-The same binary has a headless check, `--self-test`, which connects, waits for the chain, prints the four lines and the log, disconnects, and exits. The optional argument is `auto`, or a target picked by part of its name or by its exact `user@host`; the choice is remembered like the route switch. Adding `--drop` makes it kill ssh once everything is green, to fake a lost link, and wait up to 40 seconds for the app to reconnect by itself. The exit status is `0` when all four lines are green at the end, `1` when any is not, and `2` when no target matches the argument.
+The same binary has a headless check, `--self-test`, which connects, waits for the chain, prints the five lines and the log, disconnects, and exits. The optional argument is `auto`, or a target picked by part of its name or by its exact `user@host`; the choice is remembered like the route switch. Adding `--drop` makes it kill ssh once everything is green, to fake a lost link, and wait up to 40 seconds for the app to reconnect by itself. `--simulate` followed by one of the four Tailscale cases makes it behave as if Tailscale were missing, stopped, signed out, or signed into a tailnet without the box; it works for the window too. The exit status is `0` when the route, ssh, socks and stick lines are green at the end and the tailscale line is not red, `1` otherwise, and `2` when no target matches the argument or the simulation is not one of the four.
 
 ```bash
 .build/debug/LTEStickView --self-test auto
 .build/debug/LTEStickView --self-test auto --drop
+.build/debug/LTEStickView --self-test auto --simulate tailscale-missing
+.build/debug/LTEStickView --simulate tailscale-missing
 ```
 
 This is what `--self-test auto --drop` printed from the office on `2026-09-25`:
 
 ```text
 [after the reconnect]
-route        green   Tailscale, direct  orangepizero, orangepizero.lan name not found, peer online
+route        green   Tailscale, direct  orangepizero, orangepizero.lan name not found
+tailscale    green   running  orangepizero online
 ssh session  green   up  root@orangepizero
 socks proxy  green   127.0.0.1:1080
 lte stick    green   reachable  E3372-325 at 192.168.8.1
 
-13:03:44 probe orangepizero.lan:22 name not found, orangepizero:22 open
-13:03:44 /usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o BatchMode=yes root@orangepizero
-13:03:45 socks up on 127.0.0.1:1080
-13:03:45 stick answered device/information (E3372-325)
-13:03:47 tailscale: peer online, direct
-13:03:47 self-test: killing ssh (pid 75172) to fake a lost link
-13:03:47 ssh was ended by signal 9: exited (was up)
-13:03:47 next attempt in 2 s
-13:03:49 probe orangepizero.lan:22 name not found, orangepizero:22 open
-13:03:49 /usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o BatchMode=yes root@orangepizero
-13:03:51 socks up on 127.0.0.1:1080
-13:03:51 stick answered device/information (E3372-325)
-13:03:53 tailscale: peer online, direct
+13:13:35 tailscale: orangepizero online, direct
+13:13:35 probe orangepizero.lan:22 name not found, orangepizero:22 open
+13:13:35 /usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o BatchMode=yes root@orangepizero
+13:13:36 socks up on 127.0.0.1:1080
+13:13:36 stick answered device/information (E3372-325)
+13:13:38 self-test: killing ssh (pid 87976) to fake a lost link
+13:13:38 ssh was ended by signal 9: exited (was up)
+13:13:38 next attempt in 2 s
+13:13:40 probe orangepizero.lan:22 name not found, orangepizero:22 open
+13:13:40 /usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o BatchMode=yes root@orangepizero
+13:13:41 socks up on 127.0.0.1:1080
+13:13:42 stick answered device/information (E3372-325)
+```
+
+And `--self-test auto --simulate tailscale-missing`, the same office, as a Mac without Tailscale would see it:
+
+```text
+route        red     no route  no target answered on port 22
+tailscale    red     not installed  needed to reach orangepizero from this network
+ssh session  hollow  down
+socks proxy  hollow  off
+lte stick    hollow  not checked
+             button: Get Tailscale
+
+13:13:44 tailscale: not installed
+13:13:44 probe orangepizero.lan:22 name not found, orangepizero:22 name not found
+13:13:44 next attempt in 2 s
 ```
 
 > [!WARNING]
@@ -290,11 +330,25 @@ lte stick    green   reachable  E3372-325 at 192.168.8.1
 
 ---
 
+## Screenshots
+
+The real window, captured on `2026-09-25` from the office. The **Open stick page…** button arrives in steps 4 and 5.
+
+![The app connected over the tailnet: all five lines green, Tailscale direct](assets/app-main-window.png)
+
+*Connected in Auto over the tailnet, the path read as direct.*
+
+![The app with --simulate tailscale-missing: route and tailscale red, Get Tailscale button, ssh waiting to retry](assets/app-tailscale-missing.png)
+
+*The same Mac with `--simulate tailscale-missing`: the tailscale line names the cause and offers the fix, and ssh waits for the next attempt.*
+
+---
+
 ## Mockups
 
 These are the agreed mockups, rendered from the HTML sources in [assets/](assets/).
 
-![Main window: route switch, four status lines, Open stick page and Quit, and the command and log](assets/mock-main-window.png)
+![Main window: route switch, five status lines, Open stick page and Quit, and the command and log](assets/mock-main-window.png)
 
 *The main window, connected over the tailnet from the office.*
 

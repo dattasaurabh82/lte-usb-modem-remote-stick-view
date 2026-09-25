@@ -5,7 +5,16 @@ import SwiftUI
 @MainActor
 enum Main {
     static func main() {
-        if let i = CommandLine.arguments.firstIndex(of: "--self-test") {
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--simulate") {
+            let what = args.dropFirst(i + 1).first ?? ""
+            guard Tailscale.simulations.contains(what) else {
+                print("--simulate takes one of: " + Tailscale.simulations.joined(separator: ", "))
+                exit(2)
+            }
+            Tailscale.simulated = what
+        }
+        if let i = args.firstIndex(of: "--self-test") {
             let rest = CommandLine.arguments.dropFirst(i + 1).first
             SelfTest.run(route: rest)
         } else {
@@ -96,25 +105,28 @@ enum SelfTest {
         let started = Date()
         while Date().timeIntervalSince(started) < seconds {
             try? await Task.sleep(for: .milliseconds(250))
-            // Once the stick answers, give the route line up to 6 s to learn the Tailscale path.
-            let learned = t.route.detail.contains("peer") || Date().timeIntervalSince(started) > 6
+            // Once the stick answers, wait for a Tailscale reading taken after connect (the path word), at most 6 s.
+            let learned = (t.tailscaleReadAt ?? .distantPast) > (t.connectedAt ?? .distantFuture)
+                || Date().timeIntervalSince(started) > 6
             if t.stick.light == .green && learned { break }
             if t.stick.light == .red || t.ssh.light == .red || t.retryAt != nil { break }
         }
     }
 
     private static func allGreen(_ t: Tunnel) -> Bool {
-        [t.route, t.ssh, t.socks, t.stick].allSatisfy { $0.light == .green }
+        [t.route, t.ssh, t.socks, t.stick].allSatisfy { $0.light == .green } && t.tailscale.light != .red
     }
 
     private static func snapshot(_ t: Tunnel, title: String?) -> String {
-        let lines = [("route", t.route), ("ssh session", t.ssh), ("socks proxy", t.socks), ("lte stick", t.stick)]
+        let lines = [("route", t.route), ("tailscale", t.tailscale), ("ssh session", t.ssh),
+                     ("socks proxy", t.socks), ("lte stick", t.stick)]
         var out = title.map { "[\($0)]\n" } ?? ""
         for (name, l) in lines {
             out += name.padding(toLength: 13, withPad: " ", startingAt: 0)
                 + l.light.rawValue.padding(toLength: 8, withPad: " ", startingAt: 0)
                 + l.word + (l.detail.isEmpty ? "" : "  " + l.detail) + "\n"
         }
+        if let fix = t.tailscaleFix { out += "             button: \(fix.label)\n" }
         return out
     }
 }

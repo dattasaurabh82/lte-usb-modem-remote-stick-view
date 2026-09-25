@@ -23,6 +23,9 @@ struct ContentView: View {
 
             StatusRow(name: "route", line: tunnel.route)
             Divider()
+            StatusRow(name: "tailscale", line: tunnel.tailscale,
+                      action: tunnel.tailscaleFix.map { fix in (fix.label, { tunnel.applyTailscaleFix() }) })
+            Divider()
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 StatusRow(name: "ssh session", line: sshLine(at: ctx.date))
             }
@@ -74,8 +77,9 @@ struct ContentView: View {
     private func sshLine(at now: Date) -> Line {
         if let at = tunnel.retryAt, !tunnel.isActive {
             let left = max(0, Int(at.timeIntervalSince(now).rounded(.up)))
+            let when = left > 0 ? "retry in \(left) s" : "retrying now"
             return Line(light: .yellow, word: "waiting",
-                        detail: "retry in \(left) s, attempt \(tunnel.attempt + 1), last: \(tunnel.ssh.detail)")
+                        detail: "\(when), attempt \(tunnel.attempt + 1), last: \(tunnel.lastReason)")
         }
         guard let since = tunnel.connectedAt, tunnel.ssh.light == .green else { return tunnel.ssh }
         let s = Int(now.timeIntervalSince(since))
@@ -88,6 +92,8 @@ struct StatusRow: View {
     let name: String
     let line: Line
     var mono = false
+    /// An optional one-click fix shown at the end of the row.
+    var action: (label: String, run: () -> Void)?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -103,6 +109,12 @@ struct StatusRow: View {
                 .font(.callout)
                 .lineLimit(1)
             Spacer(minLength: 0)
+            if let action {
+                Button(action.label, action: action.run)
+                    .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .tint(line.light == .red ? line.light.color : nil)
+            }
         }
         .padding(.vertical, 7)
     }

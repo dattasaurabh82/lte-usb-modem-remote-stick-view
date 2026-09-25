@@ -10,11 +10,15 @@
 ![Status: step 3 of 7, route choice and reconnect](https://img.shields.io/badge/status-step%203%20of%207%2C%20route%20choice%20and%20reconnect-4a4946)
 ![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-4a4946)
 
-<img src="assets/mock-main-window.png" alt="LTE Stick View main window mockup: route switch, four status lines, Open stick page and Quit" width="720">
+<img src="assets/mock-main-window.png" alt="LTE Stick View main window mockup: route switch, five status lines, Open stick page and Quit" width="720">
 
 </div>
 
+<br>
+
 Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve their own configuration page on a small private network that only the computer they are plugged into can see. When that computer is a board with no screen, somewhere else, reaching the page from a laptop takes an SSH tunnel and a specially started browser. This app does that from `/Applications`: it picks the route to the board, holds the tunnel, proves the modem answers, and opens the page in the viewer you choose.
+
+<br>
 
 > [!NOTE]
 > The mockup above is the agreed design, not a screenshot. The app is being built step by step; where it stands is in the [roadmap](#roadmap) below, and [SPEC.md](SPEC.md) is kept up to date as it is built.
@@ -41,6 +45,7 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
 
 - **What it does**: SSH SOCKS tunnel to the Orange Pi Zero, then the stick's page through it, in a built-in viewer or a browser picked each time.
 - **Routes**: home LAN (`root@orangepizero.lan`) or the tailnet (`root@orangepizero`), chosen automatically by which one answers, with the Tailscale path (direct or relayed) on the route line and a reconnect of its own when the link drops.
+- **Tailscale is optional**: needed only away from the home network. The app never asks for it at launch; a status line says when it is the reason the box cannot be reached and offers *Get Tailscale* or *Open Tailscale* right there.
 - **Sign-in**: Tailscale SSH on the tailnet, the Mac's key on the LAN, a Keychain password for any target that asks.
 - **Browsers**: the built-in WebKit viewer, the Chromium family with their own profile, Firefox with a temporary profile; Safari is listed but not usable.
 - **Leaves nothing behind**: no system proxy changes; quitting ends the tunnel.
@@ -127,7 +132,8 @@ For another board or modem, change the targets and the modem's address in Settin
 
 - **To understand the design**: [SPEC.md](SPEC.md), with the chain diagram, every ssh flag explained, and the status words.
 - **To see where it stands**: the [roadmap](#roadmap) below, and the note box at the top of [SPEC.md](SPEC.md).
-- **To build and try it**: [Building and checking from the command line](SPEC.md#building-and-checking-from-the-command-line) in SPEC, including the headless `--self-test`.
+- **To build and try it**: [Building and checking from the command line](SPEC.md#building-and-checking-from-the-command-line) in SPEC, including the headless `--self-test` and `--simulate` for the Tailscale cases.
+- **To see the real window**: [Screenshots](SPEC.md#screenshots) in SPEC.
 - **To change a mockup**: [assets/README.md](assets/README.md).
 - **For the manual commands this app replaces**: the server repo's [runbook 05, Read the stick](https://github.com/dattasaurabh82/orangepizero-solar-server/blob/main/runbooks/05-network-setup.md#read-the-stick).
 
@@ -145,12 +151,12 @@ lte-usb-modem-remote-stick-view/
 ├── Sources/
 │   └── LTEStickView/
 │       ├── App.swift          app entry, quit handling, the --self-test mode
-│       ├── ContentView.swift  the main window: route switch, four lines, log
+│       ├── ContentView.swift  the main window: route switch, five lines, fix buttons, log
 │       ├── Tunnel.swift       the ssh process, readiness, failure reasons, retries, network changes, leftover cleanup
-│       ├── Route.swift        the port-22 probe for Auto and the Tailscale status reader
+│       ├── Route.swift        the port-22 probe for Auto, finding Tailscale and reading its status
 │       ├── System.swift       port checks, lsof and ps lookups, the stick probe
 │       └── Model.swift        targets, settings, status lines
-└── assets/          mockups (HTML sources and rendered PNGs), index in its README
+└── assets/          mockups (HTML sources and rendered PNGs) and screenshots of the app, index in its README
 ```
 
 ---
