@@ -9,3 +9,4 @@ dist/
 # working docs, kept on the Mac only; the public record is SPEC.md and the README roadmap
 CONTEXT.md
 LOG.md
+.vscode/*
