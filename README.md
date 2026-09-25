@@ -7,7 +7,7 @@
 ![Platform: macOS 14 and later](https://img.shields.io/badge/platform-macOS%2014%2B-1e40af)
 ![Language: Swift and SwiftUI](https://img.shields.io/badge/Swift-SwiftUI-1e40af)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-1e40af)
-![Status: step 2 of 7, tunnel core](https://img.shields.io/badge/status-step%202%20of%207%2C%20tunnel%20core-4a4946)
+![Status: step 3 of 7, route choice and reconnect](https://img.shields.io/badge/status-step%203%20of%207%2C%20route%20choice%20and%20reconnect-4a4946)
 ![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-4a4946)
 
 <img src="assets/mock-main-window.png" alt="LTE Stick View main window mockup: route switch, four status lines, Open stick page and Quit" width="720">
@@ -40,7 +40,7 @@ Many USB LTE modems run in a router mode (Huawei calls it HiLink) and serve thei
 ## At a glance
 
 - **What it does**: SSH SOCKS tunnel to the Orange Pi Zero, then the stick's page through it, in a built-in viewer or a browser picked each time.
-- **Routes**: home LAN (`root@orangepizero.lan`) or the tailnet (`root@orangepizero`), chosen automatically by which one answers.
+- **Routes**: home LAN (`root@orangepizero.lan`) or the tailnet (`root@orangepizero`), chosen automatically by which one answers, with the Tailscale path (direct or relayed) on the route line and a reconnect of its own when the link drops.
 - **Sign-in**: Tailscale SSH on the tailnet, the Mac's key on the LAN, a Keychain password for any target that asks.
 - **Browsers**: the built-in WebKit viewer, the Chromium family with their own profile, Firefox with a temporary profile; Safari is listed but not usable.
 - **Leaves nothing behind**: no system proxy changes; quitting ends the tunnel.
@@ -146,7 +146,8 @@ lte-usb-modem-remote-stick-view/
 │   └── LTEStickView/
 │       ├── App.swift          app entry, quit handling, the --self-test mode
 │       ├── ContentView.swift  the main window: route switch, four lines, log
-│       ├── Tunnel.swift       the ssh process, readiness, failure reasons, leftover cleanup
+│       ├── Tunnel.swift       the ssh process, readiness, failure reasons, retries, network changes, leftover cleanup
+│       ├── Route.swift        the port-22 probe for Auto and the Tailscale status reader
 │       ├── System.swift       port checks, lsof and ps lookups, the stick probe
 │       └── Model.swift        targets, settings, status lines
 └── assets/          mockups (HTML sources and rendered PNGs), index in its README
@@ -158,7 +159,7 @@ lte-usb-modem-remote-stick-view/
 
 - [x] Step 1: repo, spec, context, log, mockups
 - [x] Step 2: tunnel core
-- [ ] Step 3: Auto route choice and reconnect
+- [x] Step 3: Auto route choice and reconnect
 - [ ] Step 4: built-in viewer
 - [ ] Step 5: external browsers
 - [ ] Step 6: settings, Keychain, askpass

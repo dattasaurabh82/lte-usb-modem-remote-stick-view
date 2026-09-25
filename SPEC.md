@@ -1,13 +1,13 @@
 # LTE Stick View specification
 
 > [!NOTE]
-> **Status**: the tunnel core is built (step 2 of 7): the window connects, shows the four lines, and cleans up on quit; the route is picked by hand until Auto arrives in step 3
+> **Status**: route choice and reconnect are built (step 3 of 7): Auto probes the targets, the route line shows the Tailscale path, a lost link reconnects on its own with backoff, and a network change retries at once
 >
-> **Verified**: `2026-09-25` from the office over the tailnet: all four lines green in under 2 s, the LAN name failing as *name not found*, a taken port reported with its holder, quit by `SIGTERM` ending ssh, and a crashed run's ssh ended on the next start (see [Building and checking from the command line](#building-and-checking-from-the-command-line))
+> **Verified**: `2026-09-25` from the office: Auto skipping the LAN name and picking the tailnet with the path read as *direct*; ssh killed mid-session and back, all green, 4 s later; a taken port not retried; and from step 2, quit by `SIGTERM` and a crashed run's ssh ended on the next start (see [Building and checking from the command line](#building-and-checking-from-the-command-line))
 >
-> **Open**: the LAN path, to be run at home; whether Arc honours `--proxy-server` and `--user-data-dir`; the Firefox launch, written from documentation and not yet run
+> **Open**: the LAN path, to be run at home; a real network change (Wi-Fi off and on, or arriving home), which the code watches but was not triggered in testing; the *relayed* and *Tailscale not running* lines, not seen yet; Arc's flags and the Firefox launch
 >
-> **Next**: step 3, Auto route choice and reconnect (see the [roadmap](README.md#roadmap))
+> **Next**: step 4, the built-in viewer (see the [roadmap](README.md#roadmap))
 
 ---
 
@@ -22,6 +22,8 @@
   - [The tunnel](#the-tunnel)
   - [Signing in](#signing-in)
   - [Choosing the route](#choosing-the-route)
+    - [What Tailscale adds](#what-tailscale-adds)
+    - [When the link drops](#when-the-link-drops)
   - [When a line turns green](#when-a-line-turns-green)
   - [Opening the stick page](#opening-the-stick-page)
     - [The built-in viewer](#the-built-in-viewer)
@@ -104,19 +106,41 @@ For the password case, ssh is started with `SSH_ASKPASS` pointing at the app's o
 
 ## Choosing the route
 
-The app connects as soon as its window opens, and changing the route switch reconnects. The switch has three positions. **LAN** and **Tailscale** use that target and nothing else. **Auto**, the default, decides on every connect.
+The app connects as soon as its window opens, and changing the route switch reconnects. The switch shows **Auto** and then every target by its name, *Home LAN* and *Tailscale* by default. A named target is used and nothing else. **Auto**, the default, decides on every connect. The choice is remembered between launches.
+
+In Auto the app probes every target at once: it resolves the name and opens a plain TCP connection to port 22, giving up after 1.5 seconds. The first target in Settings order that answered wins. With the defaults that means the LAN at home, because it does not depend on Tailscale being up, and the tailnet anywhere else. The log keeps the result of every probe:
+
+```text
+13:03:09 probe orangepizero.lan:22 name not found, orangepizero:22 open
+```
+
+When no target answers, the route line turns red *no route* and the app tries again later, as described below.
+
+### What Tailscale adds
+
+Once the tunnel is up, the app asks Tailscale about the box: it runs `tailscale status --json` and looks for the peer whose MagicDNS name, short name or tailnet address is the target's host. A LAN name such as `orangepizero.lan` never matches, so the LAN route shows no Tailscale details. The first reading comes 2 seconds after connecting, because Tailscale only knows the path once traffic has flowed, and then every 30 seconds with the stick check.
+
+1. **Direct**: the peer has a current address (`CurAddr`), so traffic goes straight between the two machines. The route word becomes *Tailscale, direct*.
+2. **Relayed**: no current address, but the peer is active, so traffic goes through a relay: a peer relay if `PeerRelay` is set, otherwise the DERP region named in `Relay`. The word becomes *Tailscale, relayed via* and the region, and the dot turns yellow, because it works but is slower.
+3. **Idle**: neither yet; the word stays the target's name.
 
 > [!NOTE]
-> Built so far: the switch lists the targets by name (*Home LAN*, *Tailscale*) and uses the one picked, remembered between launches. Auto and the Tailscale details below arrive in step 3.
+> The `Relay` field alone says nothing about the path. It names the peer's home DERP region even while the connection is direct (`fra` for our box, seen on `2026-09-25`), so it is only read when there is no current address.
 
-In Auto the app probes every target in parallel: it resolves the name and opens a plain TCP connection to port 22, giving up after about 1.5 seconds. Targets are tried in the order set in Settings, so the first one that answers wins. With the defaults that means the LAN at home, because it does not depend on Tailscale being up, and the tailnet anywhere else.
-
-The **route** line also shows what Tailscale knows about the box. The app reads `tailscale status --json`, finds the peer whose name matches the tailnet target, and reports whether it is online and whether the path is direct or relayed through a DERP server. The CLI is looked for at `/usr/local/bin/tailscale` first and then inside the app at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`, always run with `TAILSCALE_BE_CLI=1`, because without it the bundled binary can decide it was started as the GUI app.
+The CLI is looked for inside the app bundle at `/Applications/Tailscale.app/Contents/MacOS/Tailscale` first, then at `/usr/local/bin/tailscale` and `/opt/homebrew/bin/tailscale`. It always runs with `TAILSCALE_BE_CLI=1`, because without it the bundled binary can decide it was started as the GUI app.
 
 > [!TIP]
-> If neither Tailscale path exists, Auto still works: the TCP probe alone decides. The route line then says the tailnet state is unknown instead of showing peer details.
+> If no Tailscale CLI is found, Auto still works: the TCP probe alone decides. On a target signed in over the tailnet, the route line then says *tailnet state unknown*, or *Tailscale not running* when the CLI answers that it is stopped.
 
-When the Mac changes networks, the app watches the change. If ssh survives it (a tailnet session often does), nothing happens. If ssh dies, the app runs the route choice again and reconnects, waiting 2, 4, 8 and then at most 30 seconds between attempts. It does not switch a working session from the tailnet to the LAN on its own, so an open stick page is never cut off by an improvement.
+### When the link drops
+
+When ssh ends without being asked to, the app decides whether waiting can help.
+
+**Worth another attempt**: *name not found*, *timed out*, *refused*, *link lost*, and *exited* for anything else. The app waits 2, 4, 8, 16 and then 30 seconds between attempts, runs the route choice again each time (so Auto can switch routes), and resets the wait once a session is up. While it waits, the ssh line shows the countdown.
+
+**Needs a person**: *sign-in refused*, *host key unknown*, *host key changed* and *port in use*. No attempt is made until **Reconnect** is pressed.
+
+When the Mac's network changes (Wi-Fi to Ethernet, a new Wi-Fi, back online), the app notes it in the log. If a session is up, it checks the stick and the Tailscale path at once instead of waiting for the next 30 second round; ssh itself notices a dead link within about 45 seconds and ends, which starts the attempts above. If no session is up and the last failure was worth another attempt, it tries again at once. It does not switch a working session from the tailnet to the LAN on its own, so an open stick page is never cut off by an improvement.
 
 ---
 
@@ -178,12 +202,12 @@ Each strategy carries a tested flag. A browser whose launch has not been run on 
 
 The main window has four lines, each with its own dot. Green means working, yellow means look, red means broken, and a hollow grey dot means not present or not tried yet.
 
-- **route**: which target is in use. Yellow *trying* while ssh connects; green with the target's name (*Home LAN*, *Tailscale*) and its host; red *no route* when the host could not be reached (*name not found*, *timed out* or *refused*); grey *not tried* before the first connect. With Auto (step 3) the green word also tells *direct* or *relayed*, and a relayed path turns yellow because it works but is slower.
-- **ssh session**: grey *down*; yellow *connecting*; green *up* with the time since connect, as in *up 00:12:41*, and the target; red *failed* with the reason, one of *sign-in refused*, *host key unknown*, *host key changed*, *port in use*, *name not found*, *timed out*, *refused*, or *exited* for anything else, in which case the log holds ssh's own words.
+- **route**: which target is in use. Yellow *probing* while Auto probes the targets, or *trying* while a named target connects; green with the target's name and, over the tailnet, *direct*; yellow *relayed via* a region; red *no route* when the host could not be reached (*name not found*, *timed out* or *refused*) or no target answered the probe; red *lost* when a working session dropped. The grey detail lists the host, the targets Auto skipped and why, and *peer online* or *peer offline*. Grey *not tried* before the first connect.
+- **ssh session**: grey *down*; yellow *connecting*; green *up* with the time since connect, as in *up 00:12:41*, and the target; yellow *waiting* with the countdown to the next attempt and the last reason; red *failed* with the reason, one of *sign-in refused*, *host key unknown*, *host key changed*, *port in use*, *name not found*, *timed out*, *refused*, *link lost* (the server stopped answering or the connection was cut), or *exited* for anything else, in which case the log holds ssh's own words.
 - **socks proxy**: grey *off*; green with the address, `127.0.0.1:1080`; red *port in use* with the name of the process holding it.
 - **lte stick**: grey *not checked*; yellow *checking*; green *reachable* with the model and address; red *no answer* when the box is reachable but the stick is not (unplugged, or `lte0` down on the box).
 
-When no session is running, a **Reconnect** button appears next to **Quit**. Under **Command and log** the window shows the exact ssh command, each step with its time, and ssh's own error lines prefixed `ssh:`.
+When no session is running, a **Reconnect** button appears on the left; it starts over at once and resets the wait between attempts. Next to **Quit** a small grey line says that closing the window ends the tunnel. It lives in the window rather than the title bar, because macOS joins a window title and subtitle with a dash. Under **Command and log** the window shows the exact ssh command, each step with its time, and ssh's own error lines prefixed `ssh:`.
 
 ---
 
@@ -227,30 +251,42 @@ swift build
 .build/debug/LTEStickView
 ```
 
-The same binary has a headless check, `--self-test`, which connects, waits for the chain, prints the four lines and the log, disconnects, and exits. The optional argument picks the target by part of its name or by its exact `user@host`, and the choice is remembered like the route switch. The exit status is `0` when all four lines are green, `1` when any is not, and `2` when no target matches the argument.
+The same binary has a headless check, `--self-test`, which connects, waits for the chain, prints the four lines and the log, disconnects, and exits. The optional argument is `auto`, or a target picked by part of its name or by its exact `user@host`; the choice is remembered like the route switch. Adding `--drop` makes it kill ssh once everything is green, to fake a lost link, and wait up to 40 seconds for the app to reconnect by itself. The exit status is `0` when all four lines are green at the end, `1` when any is not, and `2` when no target matches the argument.
 
 ```bash
-.build/debug/LTEStickView --self-test tailscale
+.build/debug/LTEStickView --self-test auto
+.build/debug/LTEStickView --self-test auto --drop
 ```
 
-This is what it printed from the office on `2026-09-25`:
+This is what `--self-test auto --drop` printed from the office on `2026-09-25`:
 
 ```text
-route        green   Tailscale  orangepizero
+[after the reconnect]
+route        green   Tailscale, direct  orangepizero, orangepizero.lan name not found, peer online
 ssh session  green   up  root@orangepizero
 socks proxy  green   127.0.0.1:1080
 lte stick    green   reachable  E3372-325 at 192.168.8.1
 
-12:55:12 /usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o BatchMode=yes root@orangepizero
-12:55:13 socks up on 127.0.0.1:1080
-12:55:13 stick answered device/information (E3372-325)
+13:03:44 probe orangepizero.lan:22 name not found, orangepizero:22 open
+13:03:44 /usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o BatchMode=yes root@orangepizero
+13:03:45 socks up on 127.0.0.1:1080
+13:03:45 stick answered device/information (E3372-325)
+13:03:47 tailscale: peer online, direct
+13:03:47 self-test: killing ssh (pid 75172) to fake a lost link
+13:03:47 ssh was ended by signal 9: exited (was up)
+13:03:47 next attempt in 2 s
+13:03:49 probe orangepizero.lan:22 name not found, orangepizero:22 open
+13:03:49 /usr/bin/ssh -N -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o BatchMode=yes root@orangepizero
+13:03:51 socks up on 127.0.0.1:1080
+13:03:51 stick answered device/information (E3372-325)
+13:03:53 tailscale: peer online, direct
 ```
 
 > [!WARNING]
-> From outside the home network the LAN target fails, as it should. The check prints `red no route orangepizero.lan: name not found` and exits with `1`.
+> From outside the home network the LAN target fails, as it should. `--self-test lan` prints `red no route orangepizero.lan: name not found`, schedules its first retry, and exits with `1`.
 
 > [!NOTE]
-> Running from the debug build on `2026-09-25`, the app used about 93 MB of memory and 0.2 % CPU, and its ssh about 5 MB and no measurable CPU.
+> Running from the debug build on `2026-09-25`, with the Tailscale reading every 30 seconds, the app used about 86 MB of memory and 0.44 s of CPU in its first 45 seconds including startup, and its ssh about 3 MB and no measurable CPU.
 
 ---
 

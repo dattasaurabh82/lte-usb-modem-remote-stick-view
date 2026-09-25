@@ -6,10 +6,14 @@ import Network
 enum System {
 
     /// Runs a program by absolute path and returns its exit status and stdout.
-    static func run(_ path: String, _ args: [String]) -> (status: Int32, out: String) {
+    /// `env` is added on top of the app's own environment.
+    static func run(_ path: String, _ args: [String], env: [String: String] = [:]) -> (status: Int32, out: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
+        if !env.isEmpty {
+            p.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
+        }
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = FileHandle.nullDevice

@@ -18,7 +18,7 @@ Run from this folder. Each render is stopped after 7 seconds, because headless C
 
 ```bash
 C="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-for spec in "mock-main-window 468" "mock-browser-chooser 360" "mock-settings 408"; do
+for spec in "mock-main-window 490" "mock-browser-chooser 360" "mock-settings 408"; do
   set -- ${=spec}
   "$C" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
     --user-data-dir=/tmp/lsv-mock-render --window-size=716,$2 \

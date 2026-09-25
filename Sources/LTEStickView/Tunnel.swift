@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Network
 import Observation
 
 /// Owns the one ssh process and the four status lines.
@@ -7,10 +8,13 @@ import Observation
 @Observable
 final class Tunnel {
     static let shared = Tunnel()
+    static let auto = "auto"
 
     var config = Config()
-    var targetIndex: Int {
-        didSet { UserDefaults.standard.set(targetIndex, forKey: "targetIndex") }
+
+    /// "auto" or a target's name. Remembered between launches.
+    var choice: String {
+        didSet { UserDefaults.standard.set(choice, forKey: "route") }
     }
 
     private(set) var route = Line(light: .hollow, word: "not tried")
@@ -18,22 +22,41 @@ final class Tunnel {
     private(set) var socks = Line(light: .hollow, word: "off")
     private(set) var stick = Line(light: .hollow, word: "not checked")
     private(set) var connectedAt: Date?
+    private(set) var retryAt: Date?
+    private(set) var attempt = 0
     private(set) var log: [String] = []
-    private(set) var command = ""
 
     /// True while ssh is starting or up; the Reconnect button shows when false.
     var isActive: Bool { process != nil }
+    var sshPID: Int32? { process?.processIdentifier }
 
     private var process: Process?
+    private var active: Target?
+    private var skipped: [String] = []
+    /// nil until Tailscale has been asked for this session.
+    private var peer: TailscaleState?
     private var stderrText = ""
+    private var forcedReason: String?
     private var stopping = false
+    private var wantsConnection = false
+    private var lastFailureRetryable = false
     private var stickLoop: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
     private var generation = 0
-
-    var target: Target { config.targets[min(targetIndex, config.targets.count - 1)] }
+    private let monitor = NWPathMonitor()
+    private var sawFirstPath = false
+    private var netDebounce: Task<Void, Never>?
 
     private init() {
-        targetIndex = UserDefaults.standard.integer(forKey: "targetIndex")
+        choice = UserDefaults.standard.string(forKey: "route") ?? Tunnel.auto
+        if choice != Tunnel.auto && !config.targets.contains(where: { $0.name == choice }) {
+            choice = Tunnel.auto
+        }
+        monitor.pathUpdateHandler = { path in
+            let summary = Tunnel.describe(path)
+            Task { @MainActor in Tunnel.shared.networkChanged(summary) }
+        }
+        monitor.start(queue: DispatchQueue(label: "lte-stick-view.path"))
     }
 
     // MARK: start
@@ -42,13 +65,21 @@ final class Tunnel {
         guard process == nil else { return }
         generation += 1
         let gen = generation
+        retryTask?.cancel()
+        retryAt = nil
         stopping = false
+        wantsConnection = true
         stderrText = ""
+        forcedReason = nil
         connectedAt = nil
-        let t = target
+        active = nil
+        skipped = []
         let port = config.socksPort
-        route = Line(light: .yellow, word: "trying", detail: t.host)
-        ssh = Line(light: .yellow, word: "connecting", detail: t.userHost)
+        let targets = config.targets
+        let pick = choice
+        route = Line(light: .yellow, word: pick == Tunnel.auto ? "probing" : "trying",
+                     detail: pick == Tunnel.auto ? targets.map(\.host).joined(separator: ", ") : "")
+        ssh = Line(light: .hollow, word: "down")
         socks = Line(light: .hollow, word: "off")
         stick = Line(light: .hollow, word: "not checked")
 
@@ -65,10 +96,45 @@ final class Tunnel {
                 self.ssh = Line(light: .red, word: "failed", detail: "port in use")
                 self.route = Line(light: .hollow, word: "not tried")
                 self.note("port \(port) is already taken \(who)")
+                self.lastFailureRetryable = false
                 return
             }
-            self.launch(t, port: port, gen: gen)
+
+            let target: Target
+            if pick == Tunnel.auto {
+                guard let found = await self.probeAll(targets, gen: gen) else { return }
+                target = found
+            } else {
+                target = targets.first { $0.name == pick } ?? targets[0]
+                self.route = Line(light: .yellow, word: "trying", detail: target.host)
+            }
+            guard gen == self.generation else { return }
+            self.active = target
+            self.launch(target, port: port, gen: gen)
         }
+    }
+
+    /// Probes every target's port 22 at once and returns the first in Settings order that answered.
+    private func probeAll(_ targets: [Target], gen: Int) async -> Target? {
+        let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
+            for (i, t) in targets.enumerated() {
+                group.addTask { (i, await Probe.tcp(host: t.host)) }
+            }
+            var out = [Int: ProbeResult]()
+            for await (i, r) in group { out[i] = r }
+            return out
+        }
+        guard gen == generation else { return nil }
+        let summary = targets.indices.map { "\(targets[$0].host):22 \(results[$0]?.why ?? "no answer")" }
+        note("probe " + summary.joined(separator: ", "))
+        guard let i = targets.indices.first(where: { results[$0]?.isOpen == true }) else {
+            route = Line(light: .red, word: "no route", detail: "no target answered on port 22")
+            lastFailureRetryable = true
+            scheduleRetry(gen: gen)
+            return nil
+        }
+        skipped = targets.indices.filter { $0 < i }.map { "\(targets[$0].host) \(results[$0]?.why ?? "no answer")" }
+        return targets[i]
     }
 
     private func launch(_ t: Target, port: UInt16, gen: Int) {
@@ -81,8 +147,8 @@ final class Tunnel {
             "-o", "BatchMode=yes",
             t.userHost,
         ]
-        command = (["/usr/bin/ssh"] + args).joined(separator: " ")
-        note(command)
+        note((["/usr/bin/ssh"] + args).joined(separator: " "))
+        ssh = Line(light: .yellow, word: "connecting", detail: t.userHost)
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
@@ -98,14 +164,17 @@ final class Tunnel {
             Task { @MainActor in Tunnel.shared.stderrArrived(text, gen: gen) }
         }
         p.terminationHandler = { proc in
-            let status = proc.terminationStatus
-            Task { @MainActor in Tunnel.shared.exited(status: status, gen: gen) }
+            let how = proc.terminationReason == .uncaughtSignal
+                ? "was ended by signal \(proc.terminationStatus)"
+                : "exited with status \(proc.terminationStatus)"
+            Task { @MainActor in Tunnel.shared.exited(how: how, gen: gen) }
         }
         do {
             try p.run()
         } catch {
             ssh = Line(light: .red, word: "failed", detail: "could not start ssh")
             note("could not start /usr/bin/ssh: \(error.localizedDescription)")
+            lastFailureRetryable = false
             return
         }
         process = p
@@ -119,14 +188,15 @@ final class Tunnel {
     private func waitForSocks(port: UInt16, gen: Int) async {
         let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
-            guard gen == generation, process != nil else { return }
+            guard gen == generation, process != nil, let t = active else { return }
             if await Task.detached(operation: { System.canConnect(port) }).value {
                 guard gen == generation else { return }
                 connectedAt = Date()
-                route = Line(light: .green, word: target.name, detail: target.host)
-                ssh = Line(light: .green, word: "up", detail: target.userHost)
+                attempt = 0
+                ssh = Line(light: .green, word: "up", detail: t.userHost)
                 socks = Line(light: .green, word: "127.0.0.1:\(port)")
                 note("socks up on 127.0.0.1:\(port)")
+                updateRouteLine()
                 startStickLoop(gen: gen)
                 return
             }
@@ -134,15 +204,23 @@ final class Tunnel {
         }
         guard gen == generation, process != nil else { return }
         note("socks port did not open within 10 s, stopping ssh")
-        ssh = Line(light: .red, word: "failed", detail: "timed out")
+        forcedReason = "timed out"
         process?.terminate()
     }
 
+    /// Every 30 s while up: ask the stick, and re-read what Tailscale knows about the path.
     private func startStickLoop(gen: Int) {
         stickLoop?.cancel()
         stickLoop = Task {
+            var first = true
             while !Task.isCancelled, gen == self.generation, self.process != nil {
                 await self.checkStick(gen: gen)
+                if first {
+                    // Tailscale only knows direct or relayed once traffic has flowed.
+                    try? await Task.sleep(for: .seconds(2))
+                    first = false
+                }
+                await self.refreshPeer(gen: gen)
                 try? await Task.sleep(for: .seconds(30))
             }
         }
@@ -164,6 +242,56 @@ final class Tunnel {
         }
     }
 
+    private func refreshPeer(gen: Int) async {
+        guard let host = active?.host else { return }
+        let state = await Task.detached { Tailscale.state(for: host) }.value
+        guard gen == generation, process != nil else { return }
+        if state != peer {
+            switch state {
+            case .peer(let p): note("tailscale: peer \(p.online ? "online" : "offline"), \(Self.words(p.path))")
+            case .notRunning(let s): note("tailscale: not running (\(s))")
+            case .notAPeer, .unknown: break
+            }
+        }
+        peer = state
+        updateRouteLine()
+    }
+
+    /// Builds the route line from the target in use, what was skipped, and the Tailscale state.
+    private func updateRouteLine() {
+        guard let t = active, connectedAt != nil else { return }
+        var word = t.name
+        var light = Light.green
+        var detail = [t.host]
+        if !skipped.isEmpty { detail.append(contentsOf: skipped) }
+        switch peer {
+        case nil:
+            break
+        case .peer(let p):
+            switch p.path {
+            case .direct: word += ", direct"
+            case .relayed(let via): word += ", relayed via \(via)"; light = .yellow
+            case .idle: break
+            }
+            detail.append(p.online ? "peer online" : "peer offline")
+        case .notRunning:
+            if t.signIn == .tailnet { detail.append("Tailscale not running") }
+        case .unknown:
+            if t.signIn == .tailnet { detail.append("tailnet state unknown") }
+        case .notAPeer:
+            break
+        }
+        route = Line(light: light, word: word, detail: detail.joined(separator: ", "))
+    }
+
+    private static func words(_ path: PeerState.Path) -> String {
+        switch path {
+        case .direct: "direct"
+        case .relayed(let via): "relayed via \(via)"
+        case .idle: "idle"
+        }
+    }
+
     // MARK: ssh output and exit
 
     private func stderrArrived(_ text: String, gen: Int) {
@@ -176,11 +304,13 @@ final class Tunnel {
         }
     }
 
-    private func exited(status: Int32, gen: Int) {
+    private func exited(how: String, gen: Int) {
         guard gen == generation else { return }
         stickLoop?.cancel()
+        let wasUp = connectedAt != nil
         process = nil
         connectedAt = nil
+        peer = nil
         Orphan.clear()
         socks = Line(light: .hollow, word: "off")
         stick = Line(light: .hollow, word: "not checked")
@@ -190,15 +320,23 @@ final class Tunnel {
             note("ssh stopped")
             return
         }
-        let why = Self.reason(stderrText)
-        note("ssh exited with status \(status): \(why)")
-        if ssh.light != .red { ssh = Line(light: .red, word: "failed", detail: why) }
+        let why = forcedReason ?? Self.reason(stderrText)
+        note("ssh \(how): \(why)" + (wasUp ? " (was up)" : ""))
+        ssh = Line(light: .red, word: "failed", detail: why)
+        let host = active?.host ?? ""
         if ["name not found", "timed out", "refused"].contains(why) {
-            route = Line(light: .red, word: "no route", detail: "\(target.host): \(why)")
+            route = Line(light: .red, word: "no route", detail: "\(host): \(why)")
+        } else if why == "link lost" {
+            route = Line(light: .red, word: "lost", detail: host)
         } else {
             route = Line(light: .hollow, word: "not tried")
         }
+        lastFailureRetryable = Self.retryable.contains(why)
+        if lastFailureRetryable { scheduleRetry(gen: gen) }
     }
+
+    /// Failures that a new attempt, or a better network, can fix. The rest need a person.
+    static let retryable: Set<String> = ["name not found", "timed out", "refused", "link lost", "exited"]
 
     /// Maps ssh's error text to one of the state words in SPEC.md.
     static func reason(_ stderr: String) -> String {
@@ -209,9 +347,57 @@ final class Tunnel {
         if e.contains("address already in use") || e.contains("cannot listen to port")
             || e.contains("could not request local forwarding") { return "port in use" }
         if e.contains("could not resolve hostname") { return "name not found" }
+        if e.contains("not responding") || e.contains("broken pipe") || e.contains("connection reset")
+            || e.contains("closed by remote host") || e.contains("connection closed") { return "link lost" }
         if e.contains("timed out") { return "timed out" }
         if e.contains("connection refused") { return "refused" }
         return "exited"
+    }
+
+    // MARK: retry and network changes
+
+    /// Waits 2, 4, 8, 16, then 30 s between attempts, and starts again with a fresh route choice.
+    private func scheduleRetry(gen: Int) {
+        attempt += 1
+        let delay = min(Double(1 << min(attempt, 5)), 30)
+        retryAt = Date().addingTimeInterval(delay)
+        note("next attempt in \(Int(delay)) s")
+        retryTask?.cancel()
+        retryTask = Task {
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, gen == self.generation, self.wantsConnection else { return }
+            self.start()
+        }
+    }
+
+    private func networkChanged(_ summary: String) {
+        guard sawFirstPath else { sawFirstPath = true; return }
+        netDebounce?.cancel()
+        netDebounce = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            self.note("network changed (\(summary))")
+            if self.process == nil {
+                if self.wantsConnection && self.lastFailureRetryable {
+                    self.note("trying again now")
+                    self.start()
+                }
+            } else {
+                let gen = self.generation
+                await self.checkStick(gen: gen)
+                await self.refreshPeer(gen: gen)
+            }
+        }
+    }
+
+    nonisolated private static func describe(_ path: NWPath) -> String {
+        guard path.status == .satisfied else { return "offline" }
+        var kinds: [String] = []
+        if path.usesInterfaceType(.wiredEthernet) { kinds.append("ethernet") }
+        if path.usesInterfaceType(.wifi) { kinds.append("wifi") }
+        if path.usesInterfaceType(.cellular) { kinds.append("cellular") }
+        if path.usesInterfaceType(.other) { kinds.append("other") }
+        return kinds.isEmpty ? "online" : kinds.joined(separator: ", ")
     }
 
     // MARK: stop
@@ -220,6 +406,9 @@ final class Tunnel {
     func stop() {
         generation += 1
         stopping = true
+        wantsConnection = false
+        retryTask?.cancel()
+        retryAt = nil
         stickLoop?.cancel()
         guard let p = process else { return }
         p.terminate()
@@ -228,6 +417,7 @@ final class Tunnel {
         if p.isRunning { kill(p.processIdentifier, SIGKILL) }
         process = nil
         connectedAt = nil
+        peer = nil
         Orphan.clear()
         ssh = Line(light: .hollow, word: "down")
         socks = Line(light: .hollow, word: "off")
@@ -236,12 +426,14 @@ final class Tunnel {
         note("ssh stopped")
     }
 
+    /// Reconnect button and route switch: start over now, with the backoff reset.
     func reconnect() {
         stop()
+        attempt = 0
         start()
     }
 
-    private func note(_ s: String) {
+    func note(_ s: String) {
         let stamp = Date().formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
         log.append("\(stamp) \(s)")
         if log.count > 200 { log.removeFirst(log.count - 200) }

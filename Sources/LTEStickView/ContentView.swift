@@ -9,9 +9,10 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Text("Route").foregroundStyle(.secondary)
-                Picker("Route", selection: $tunnel.targetIndex) {
-                    ForEach(tunnel.config.targets.indices, id: \.self) { i in
-                        Text(tunnel.config.targets[i].name).tag(i)
+                Picker("Route", selection: $tunnel.choice) {
+                    Text("Auto").tag(Tunnel.auto)
+                    ForEach(tunnel.config.targets, id: \.name) { t in
+                        Text(t.name).tag(t.name)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -35,6 +36,9 @@ struct ContentView: View {
                     Button("Reconnect") { tunnel.reconnect() }
                 }
                 Spacer()
+                Text("closing this window ends the tunnel")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
                 Button("Quit") { NSApp.terminate(nil) }
             }
             .padding(.top, 14)
@@ -63,12 +67,16 @@ struct ContentView: View {
         }
         .padding(18)
         .frame(width: 640)
-        .navigationSubtitle("closing this window ends the tunnel")
         .task { tunnel.start() }
-        .onChange(of: tunnel.targetIndex) { tunnel.reconnect() }
+        .onChange(of: tunnel.choice) { tunnel.reconnect() }
     }
 
     private func sshLine(at now: Date) -> Line {
+        if let at = tunnel.retryAt, !tunnel.isActive {
+            let left = max(0, Int(at.timeIntervalSince(now).rounded(.up)))
+            return Line(light: .yellow, word: "waiting",
+                        detail: "retry in \(left) s, attempt \(tunnel.attempt + 1), last: \(tunnel.ssh.detail)")
+        }
         guard let since = tunnel.connectedAt, tunnel.ssh.light == .green else { return tunnel.ssh }
         let s = Int(now.timeIntervalSince(since))
         let up = String(format: "up %02d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
